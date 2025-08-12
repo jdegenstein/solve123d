@@ -1,0 +1,43 @@
+# Packaging debris
+dist/
+*.egg-info/
+src/solve123d/_version.py
+
+# Testing debris
+__pycache__/
+
+# Coverage debris
+.coverage
+htmlcov/
+
+# Docs debris
+docs/_build/
+
+# User generated debris
+*.swp
+*.log
+*.step
+*.STEP
+*.stl
+*.svg
+*.dxf
+*.3mf
+
+#mypy cache
+.mypy_cache
+build
+
+#Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+#ide debris
+.vscode
+
+# Profiling debris.
+prof/
