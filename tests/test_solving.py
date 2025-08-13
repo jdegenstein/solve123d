@@ -123,9 +123,9 @@ class SolvingTest(unittest.TestCase):
         cs.distance_constraint(pt1, (0, 0), r)
         cs.distance_constraint(pt2, (0, 0), r + d)
         cs.line_left_distance_to_point_2d_constraint(((0, 0), (0, 1)), pt1, -w / 2)
-        cs.angle_constraint(((0, 0), (0, 1)), (pt1, pt2), -30 * math.pi / 180.0)
+        cs.angle_2d_constraint(((0, 0), (0, 1)), (pt1, pt2), -30 * math.pi / 180.0)
 
-        para = unwrap(cs.parallel_constraint)
+        para = unwrap(cs.parallel_2d_constraint)
 
         self.assertAlmostEqual(
             unwrap(cs.distance_constraint)(cs.solve(pt1), (0, 0), 0), r
@@ -140,7 +140,7 @@ class SolvingTest(unittest.TestCase):
         l1 = ((0, 0), (0, 1))
         l2 = (cs.solve(pt1), cs.solve(pt2))
         self.assertAlmostEqual(
-            unwrap(cs.angle_constraint)(l1, l2, -30 * math.pi / 180.0), 0.0
+            unwrap(cs.angle_2d_constraint)(l1, l2, -30 * math.pi / 180.0), 0.0
         )
 
         self.assertAlmostEqual(

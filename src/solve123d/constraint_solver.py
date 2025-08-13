@@ -40,10 +40,12 @@ jax.config.update("jax_enable_x64", True)
 
 
 def is_iterable(a):  # TODO: support things that aren't sequences?
+    """Used to decide what values to iterate"""
     return isinstance(a, collections.abc.Sequence)
 
 
 def recursive_unpack(list_or_item):
+    """Depth-first iterates over all leaves in list_or_item"""
     if is_iterable(list_or_item):
         for i in list_or_item:
             yield from recursive_unpack(i)
@@ -52,12 +54,17 @@ def recursive_unpack(list_or_item):
 
 
 class Variable:
+    """A value that the solver will solve for"""
+
     def __init__(self, initial_value=0.0):
         self.initial_value = initial_value
         self.constraints = set()
         self.solution = None
 
     def solve(self):
+        """Returns the solution to the system of equations connected to the variable
+        Runs solver on the first call (all other variables end up solved afterwards)
+        """
         if self.solution is None:
             solve_everything(self)
         if isinstance(self.solution, jax.Array) and self.solution.size == 1:
@@ -65,6 +72,7 @@ class Variable:
         return self.solution
 
     def solution_as_float_or_none(self):
+        """If already solved, gives solution, else returns None"""
         if self.solution is None:
             return None
         if isinstance(self.solution, jax.Array) and self.solution.size == 1:
@@ -73,11 +81,19 @@ class Variable:
 
     @property
     def s(self):
+        """Abbreviation for solve()
+        Returns the solution to the system of equations connected to the variable
+        Runs solver on the first call (all other variables end up solved afterwards)"""
         return self.solve()
 
 
 # TODO: refactor common functionality among different substitution methods
 def var(*args):
+    """Helper method. Converts each value in the arguments to Variable(value)
+    Intended usage: var(1,2) is equivalent to (Variable(1), Variable(2))
+     var([1,2]) is equivalent to ([Variable(1), Variable(2)])
+     and so on.
+    """
     if len(args) == 1:
         a = args[0]
     else:
@@ -89,6 +105,10 @@ def var(*args):
 
 
 def solve(*args):
+    """Helper method. Converts each Variable in the argument to the solution, similarly to var()
+    Intended usage: solve(a, b) is equivalent to (a.s, b.s)
+    Note that basic arithmetics is also supported, solve(a+1, b) would also work as expected
+    """
     if len(args) == 1:
         a = args[0]
     else:
@@ -103,8 +123,13 @@ def solve(*args):
         return a
 
 
-# Creates a function that will output a wrapper object around f' where f' is f with the non-variable values bound to it and variable values as arguments
 def make_wrapper(f):
+    """
+    High order function that creates a function that will output a wrapper object around
+    f' where f' is f with the non-variable values bound to it and variable values as arguments
+    :f: Function to be wrapped
+    """
+
     @functools.wraps(f)
     def result(*args_of_first_invocation):
         def inner_f(*args_of_solver_invocation):
@@ -139,7 +164,10 @@ def make_wrapper(f):
 
 
 class WrappedFunction:
+    """Represents a function used as a geometric constraint"""
+
     def make_zero(self):
+        """Creates a constraint that the wrapped function equates to zero"""
         for a in recursive_unpack(self.arguments):
             if isinstance(a, Variable):
                 a.constraints.add(self)
@@ -161,34 +189,42 @@ class WrappedFunction:
 
 
 def swap_args(f):
+    """Higher order function that converts f(a,b) into f(b,a)"""
+
     def result(a, b):
         return f(b, a)
 
     return result
 
 
-def add_operator_wrapper(name, wrapper):
+def _add_operator_wrapper(name, wrapper):
     setattr(WrappedFunction, name, wrapper)
     setattr(Variable, name, wrapper)
 
 
-binary_operators_to_wrap = ["add", "sub", "mul", "truediv", "pow"]
-for o in binary_operators_to_wrap:
-    add_operator_wrapper(f"__{o}__", make_wrapper(operator.__dict__[o]))
-    add_operator_wrapper(f"__r{o}__", make_wrapper(swap_args(operator.__dict__[o])))
+_binary_operators_to_wrap = ["add", "sub", "mul", "truediv", "pow"]
+for o in _binary_operators_to_wrap:
+    _add_operator_wrapper(f"__{o}__", make_wrapper(operator.__dict__[o]))
+    _add_operator_wrapper(f"__r{o}__", make_wrapper(swap_args(operator.__dict__[o])))
 
-unary_operators_to_wrap = ["neg", "pos"]
-for o in unary_operators_to_wrap:
-    add_operator_wrapper(f"__{o}__", make_wrapper(operator.__dict__[o]))
+_unary_operators_to_wrap = ["neg", "pos"]
+for o in _unary_operators_to_wrap:
+    _add_operator_wrapper(f"__{o}__", make_wrapper(operator.__dict__[o]))
 
 
 class MagicalZero:
+    """Used to allow creation of constraints via `magic.zero=a+2*b` syntax"""
+
     @property
     def zero(self):
+        """Used to allow creation of constraints via `magic.zero=a+2*b` syntax
+        Getter simply returns 0.0
+        """
         return 0.0
 
     @zero.setter
     def zero(self, val):
+        """Used to allow creation of constraints via `magic.zero=a+2*b` syntax"""
         val.make_zero()
 
 
@@ -196,8 +232,9 @@ magic = MagicalZero()
 
 
 # Makes a deep copy but replacing variable instances.
-# TODO: refactor to use same path for tuples and arrays
-def recursive_substitute(args, state, indices):
+def _recursive_substitute(args, state, indices):
+    """Makes a deep coopy but substitutes Variables with values from state"""
+
     def recursive_substitute_inner(arg):
         def process(a):
             if isinstance(a, Variable):
@@ -207,6 +244,7 @@ def recursive_substitute(args, state, indices):
             else:
                 return a
 
+        # TODO: refactor to use same path for tuples and arrays
         if isinstance(arg, tuple):
             return tuple(process(a) for a in arg)
         else:
@@ -232,7 +270,10 @@ def recursive_substitute(args, state, indices):
 #     recursive_set_solution_inner(args)
 
 
-def solve_everything(first_variable):
+def solve_everything(first_variable: Variable):
+    """Solves all constraints and variables associated with the provided argument.
+    :param first_variable: Variable the variable to use as starting point for traversal.
+    """
     print("Constraint solver invoked")
     all_variables = set()
     all_constraints = set()
@@ -270,7 +311,7 @@ def solve_everything(first_variable):
         result = []
         for c in all_constraints:
             args = c.arguments
-            args_copy = recursive_substitute(args, input_state, variable_indices)
+            args_copy = _recursive_substitute(args, input_state, variable_indices)
             # r=c.function(*(input_state[variable_indices[v]] for v in c.arguments))
             r = c.function(*args_copy)
             if is_iterable(r):
@@ -302,6 +343,10 @@ def solve_everything(first_variable):
 
 
 def make_constraint(f):
+    """Decorator that makes a constraint out of function f
+    :f: function returning a tuple or array of errors (residuals).
+    """
+
     @functools.wraps(f)
     def result(*args):
         return WrappedFunction(f, [*args]).make_zero()
@@ -311,6 +356,7 @@ def make_constraint(f):
 
 @make_constraint
 def sum_constraint(a, b, c):
+    """Simple test constraint, enforces that a+b=c"""
     if is_iterable(a):
         return jnp.array(
             [(a[i] + b[i] - c[i]) for i, v in enumerate(a)], dtype=jnp.float64
@@ -321,6 +367,11 @@ def sum_constraint(a, b, c):
 
 @make_constraint
 def distance_constraint(a, b, c):
+    """Constrains N-dimensional distance between a and b to be equal to c.
+    :a: n-dimensional vector
+    :b: n-dimensional vector
+    :c: distance
+    """
     return (
         jnp.linalg.norm(
             jnp.subtract(
@@ -333,6 +384,8 @@ def distance_constraint(a, b, c):
 
 @make_constraint
 def coincident(a, b):
+    """Coincident constraint, requires that a=b . 
+    It is faster to just use the same variable for a and b instead."""
     if is_iterable(a):
         return [(a[i] - b[i]) for i, v in enumerate(a)]
     else:
@@ -341,6 +394,12 @@ def coincident(a, b):
 
 @make_constraint
 def line_point_distance_constraint(line, point, desired_dist=0.0):
+    """N-d line to point distance constraint (point is constrained to the surface of a cylinder around the line)
+    In 2D construction, use line_left_distance_to_point_2d_constraint as it provides signed distance instead.
+    :line: Tuple of two points defining a line
+    :point: The point being constrained
+    :desired_dist: Desired distance to the line
+    """
     p0 = jnp.array(line[0], dtype=jnp.float64)
     p1 = jnp.array(line[1], dtype=jnp.float64)
     pt = jnp.array(point)
@@ -355,6 +414,11 @@ def line_point_distance_constraint(line, point, desired_dist=0.0):
 
 @make_constraint
 def line_contains_point_2d_constraint(line, point):
+    """Constrains 2d point to the 2d line (better for 2D construction than using generic N-dimensional verison)
+    :line: Tuple of two points defining a line
+    :point: the point being constrained
+
+    """
     p0 = jnp.array(line[0], dtype=jnp.float64)
     p1 = jnp.array(line[1], dtype=jnp.float64)
     pt = jnp.array(point, dtype=jnp.float64)
@@ -365,6 +429,12 @@ def line_contains_point_2d_constraint(line, point):
 
 @make_constraint
 def line_left_distance_to_point_2d_constraint(line, point, desired_dist=0.0):
+    """Constrains signed distance between 2D line and 2D point
+    Looking from the first point of the line to the second point, the distance is given in the left direction.
+    For example if the line is ((0,0), (1,0)) then the distance is equal to point[1]
+    :line: Tuple of two points defining a line
+    :point: the point being constrained
+    """
     p0 = jnp.array(line[0], dtype=jnp.float64)
     p1 = jnp.array(line[1], dtype=jnp.float64)
     pt = jnp.array(point, dtype=jnp.float64)
@@ -376,7 +446,11 @@ def line_left_distance_to_point_2d_constraint(line, point, desired_dist=0.0):
 
 
 @make_constraint
-def parallel_constraint(linea, lineb):
+def parallel_2d_constraint(linea, lineb):
+    """Makes two lines parallel, in 2D
+    :linea: First line, a tuple of two points
+    :lineb: Second line, a tuple of two points
+    """
     a0 = jnp.array(linea[0], dtype=jnp.float64)
     a1 = jnp.array(linea[1], dtype=jnp.float64)
 
@@ -389,7 +463,12 @@ def parallel_constraint(linea, lineb):
 
 
 @make_constraint
-def angle_constraint(linea, lineb, angle):
+def angle_2d_constraint(linea, lineb, angle):
+    """Makes two lines be at an angle, in 2D
+    :linea: First line, a tuple of two points
+    :lineb: Second line, a tuple of two points
+    :angle: angle, in radians, positive counter-clockwise
+    """
     a0 = jnp.array(linea[0], dtype=jnp.float64)
     a1 = jnp.array(linea[1], dtype=jnp.float64)
 
