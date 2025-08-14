@@ -26,12 +26,12 @@ license:
 
 import collections
 import copy
-import operator
 import functools
-import jax
-import jaxopt
-import jax.numpy as jnp
+import operator
 
+import jax
+import jax.numpy as jnp
+import jaxopt
 
 jax.config.update("jax_enable_x64", True)
 
@@ -141,7 +141,12 @@ def make_wrapper(f):
                 else:
                     return a
 
-            return f(*[process_argument(i, a) for i, a in enumerate(args_of_first_invocation)])
+            return f(
+                *[
+                    process_argument(i, a)
+                    for i, a in enumerate(args_of_first_invocation)
+                ]
+            )
 
         relevant_args = []
         args_for_bypass = []
@@ -384,7 +389,7 @@ def distance_constraint(a, b, c):
 
 @make_constraint
 def coincident(a, b):
-    """Coincident constraint, requires that a=b . 
+    """Coincident constraint, requires that a=b .
     It is faster to just use the same variable for a and b instead."""
     if is_iterable(a):
         return [(a[i] - b[i]) for i, v in enumerate(a)]
@@ -407,7 +412,9 @@ def line_point_distance_constraint(line, point, desired_dist=0.0):
     ptdelta = pt - p0
     dirnorm2 = jnp.dot(direction, direction)
     return (
-        jnp.linalg.norm(jnp.subtract(ptdelta, direction * (jnp.dot(direction, ptdelta) / dirnorm2)))
+        jnp.linalg.norm(
+            jnp.subtract(ptdelta, direction * (jnp.dot(direction, ptdelta) / dirnorm2))
+        )
         - desired_dist
     )
 
