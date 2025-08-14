@@ -25,13 +25,13 @@ license:
 """
 
 import collections
-import jax
-import jaxopt
-import jax.numpy as jnp
-import weakref  # todo: use weakrefs in constraints
 import copy
 import operator
 import functools
+import jax
+import jaxopt
+import jax.numpy as jnp
+
 
 jax.config.update("jax_enable_x64", True)
 
@@ -133,7 +133,7 @@ def make_wrapper(f):
     @functools.wraps(f)
     def result(*args_of_first_invocation):
         def inner_f(*args_of_solver_invocation):
-            def eval(i, a):
+            def process_argument(i, a):
                 if isinstance(a, WrappedFunction):
                     return a.function(*args_of_solver_invocation[i])
                 elif isinstance(a, Variable) and a.solution is None:
@@ -141,7 +141,7 @@ def make_wrapper(f):
                 else:
                     return a
 
-            return f(*[eval(i, a) for i, a in enumerate(args_of_first_invocation)])
+            return f(*[process_argument(i, a) for i, a in enumerate(args_of_first_invocation)])
 
         relevant_args = []
         args_for_bypass = []
@@ -284,14 +284,14 @@ def solve_everything(first_variable: Variable):
             for a in c.arguments:
                 recurse_variable(a)
 
-    def recurse_variable(var):
-        if is_iterable(var):
-            for v in var:
+    def recurse_variable(a):
+        if is_iterable(a):
+            for v in a:
                 recurse_variable(v)
-        elif isinstance(var, Variable):
-            if var not in all_variables:
-                all_variables.add(var)
-                for c in var.constraints:
+        elif isinstance(a, Variable):
+            if a not in all_variables:
+                all_variables.add(a)
+                for c in a.constraints:
                     recurse_constraint(c)
 
     recurse_variable(first_variable)
@@ -332,7 +332,7 @@ def solve_everything(first_variable: Variable):
     jit_solver = jax.jit(solver.run)
 
     # result_params, state = solver.run(params)
-    result_params, state = jit_solver(params)
+    result_params, _ = jit_solver(params)
 
     for v in all_variables:
         v.solution = result_params[variable_indices[v]]
@@ -403,11 +403,11 @@ def line_point_distance_constraint(line, point, desired_dist=0.0):
     p0 = jnp.array(line[0], dtype=jnp.float64)
     p1 = jnp.array(line[1], dtype=jnp.float64)
     pt = jnp.array(point)
-    dir = jnp.subtract(p1, p0)
+    direction = jnp.subtract(p1, p0)
     ptdelta = pt - p0
-    dirnorm2 = jnp.dot(dir, dir)
+    dirnorm2 = jnp.dot(direction, direction)
     return (
-        jnp.linalg.norm(jnp.subtract(ptdelta, dir * (jnp.dot(dir, ptdelta) / dirnorm2)))
+        jnp.linalg.norm(jnp.subtract(ptdelta, direction * (jnp.dot(direction, ptdelta) / dirnorm2)))
         - desired_dist
     )
 
