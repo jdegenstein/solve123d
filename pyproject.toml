@@ -34,7 +34,8 @@ classifiers = [
 
 dependencies = [
     "jax",
-    "jaxopt"
+    "jaxopt",
+    "build123d"
 ]
 
 [project.urls]

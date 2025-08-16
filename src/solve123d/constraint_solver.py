@@ -103,6 +103,17 @@ def var(*args):
     else:
         return Variable(a)
 
+def unjax(*args):
+    if len(args) == 1:
+        a = args[0]
+    else:
+        a = args
+    if isinstance(a, collections.abc.Sequence):
+        return a.__class__(unjax(b) for b in a)
+    elif isinstance(a, jax.Array) and a.size==1:
+        return float(a)
+    else:
+        return a
 
 def solve(*args):
     """Helper method. Converts each Variable in the argument to the solution, similarly to var()
@@ -118,7 +129,7 @@ def solve(*args):
     elif isinstance(a, Variable):
         return a.solve()
     elif isinstance(a, WrappedFunction):
-        return a.function(solve(*a.arguments))
+        return a.function(*solve(a.arguments))
     else:
         return a
 
@@ -132,12 +143,17 @@ def make_wrapper(f):
 
     @functools.wraps(f)
     def result(*args_of_first_invocation):
+        indices=[]
         def inner_f(*args_of_solver_invocation):
+            nonlocal args_of_first_invocation
             def process_argument(i, a):
                 if isinstance(a, WrappedFunction):
-                    return a.function(*args_of_solver_invocation[i])
-                elif isinstance(a, Variable) and a.solution is None:
-                    return args_of_solver_invocation[i][0]
+                    return a.function(*args_of_solver_invocation[indices[i]])
+                elif isinstance(a, Variable):
+                    if a.solution is None:
+                        return args_of_solver_invocation[indices[i]][0]
+                    else:
+                        return a.solution_as_float_or_none()
                 else:
                     return a
 
@@ -147,18 +163,19 @@ def make_wrapper(f):
                     for i, a in enumerate(args_of_first_invocation)
                 ]
             )
-
         relevant_args = []
         args_for_bypass = []
+        # TODO: handle arguments that are tuples of tuples etc
         for i, a in enumerate(args_of_first_invocation):
-            if isinstance(a, WrappedFunction):
+            indices.append(len(relevant_args))
+            if isinstance(a, WrappedFunction):                
                 relevant_args.append(a.arguments)
             elif isinstance(a, Variable):
                 if a.solution is None:
-                    relevant_args.append([a])
+                    relevant_args.append([a])                    
                 else:
                     args_for_bypass.append(a.solution_as_float_or_none())
-            else:
+            else:                
                 args_for_bypass.append(a)
         # If none of arguments will be substituted, evaluate wrapped function here and now instead of delaying evaluation
         if len(relevant_args) == 0:
@@ -310,8 +327,11 @@ def solve_everything(first_variable: Variable):
 
     params = jnp.array([v.initial_value for v in all_variables], dtype=jnp.float64)
 
+    residuals_count = 0
+
     # Make one function to solve, out of all known constraints
     def all_constraints_function(input_state):
+        nonlocal residuals_count
         # Todo: create jnp.array directly
         result = []
         for c in all_constraints:
@@ -323,7 +343,9 @@ def solve_everything(first_variable: Variable):
                 result += r
             else:
                 result.append(r)
-        return jnp.array(result)
+        residuals_count = len(result)
+        jax_result = jnp.array(result)
+        return jax_result
 
     fast_residual = jax.jit(all_constraints_function)
     # jac = jax.jacfwd(all_constraints_function)
@@ -340,7 +362,19 @@ def solve_everything(first_variable: Variable):
     result_params, _ = jit_solver(params)
 
     for v in all_variables:
-        v.solution = result_params[variable_indices[v]]
+        # If we want to deal with jax.Array values
+        # v.solution = result_params[variable_indices[v]]
+        v.solution = float(result_params[variable_indices[v]])
+
+    if residuals_count < len(params):
+        print(
+            f"Under constrained: {len(params)} degrees of freedom but only {residuals_count} constraints"
+        )
+
+    if residuals_count > len(params):
+        print(
+            f"Over or redundantly constrained: {len(params)} degrees of freedom and {residuals_count} constraints"
+        )
 
     print(f"initial params = {params} , result_params={result_params}")
     # print(fast_residual(params))
@@ -354,6 +388,10 @@ def make_constraint(f):
 
     @functools.wraps(f)
     def result(*args):
+        # TODO: use make_wrapper once it supports functions whose arguments are tuples containing other wrapped functions etc
+        #wrapper_f=make_wrapper(f)
+        #wrapper=wrapper_f(*args)
+        #return wrapper.make_zero()
         return WrappedFunction(f, [*args]).make_zero()
 
     return result
@@ -450,6 +488,15 @@ def line_left_distance_to_point_2d_constraint(line, point, desired_dist=0.0):
     return (
         direction[0] * dir_to_pt[1] - direction[1] * dir_to_pt[0]
     ) / jnp.linalg.norm(direction) - desired_dist
+
+
+
+def line_pt_dist(line, point):
+    direction = (line[1][0]-line[0][0], line[1][1]-line[0][1])
+    dir_to_pt = (point[0]-line[0][0], point[1]-line[0][1])
+    return (
+        direction[0] * dir_to_pt[1] - direction[1] * dir_to_pt[0]
+    ) / make_wrapper(jnp.sqrt)(direction[0]**2 + direction[1]**2)
 
 
 @make_constraint
