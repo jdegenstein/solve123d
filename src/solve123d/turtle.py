@@ -32,6 +32,7 @@ import jax.numpy as jnp
 import build123d
 import math
 
+
 class Primitive:
     pass
 
@@ -50,6 +51,7 @@ class TArc(Primitive):
         self.end_point = end_point
         self.center = center
         self.radius = radius
+
 
 class TurnDir(Enum):
     AUTO = 0
@@ -74,6 +76,7 @@ def conjugate(a):
 def add(a, b):
     return (a[0] + b[0], a[1] + b[1])
 
+
 def sub(a, b):
     return (a[0] - b[0], a[1] - b[1])
 
@@ -86,7 +89,25 @@ def all_values(*args):
 
 
 class Turtle:
+    """Turtle graphics + constraints for CAD sketching
+    Intended usage:
+    ```
+    with Turtle() as t:
+        A bunch of turtle operations using either global functions or t. methods
+    ```
+    """
+
     _turtle_stack = []
+    """Global stack of nested `with Turtle as t:` contexts """
+
+    simplify_equations = True
+    """
+    When using .x= and .y= constraint, set the value after setting constraint. 
+    That avoids pile up of very deep expressions by consecutive Turtle operations
+    In over constrained cases, that can cause gaps
+    TODO: Sum sequences of moves
+    TODO: opportunistically solve whenever a subset of equations is fully constrained.
+    """
 
     @classmethod
     def top(cls):
@@ -100,7 +121,7 @@ class Turtle:
         self.position = (0, 0)
         self.corner_radius = 0
         self._use_stack = use_stack
-        self.angle_scale=math.pi/180.0
+        self.angle_scale = math.pi / 180.0
 
     def __enter__(self):
         print("Turtle start")
@@ -126,20 +147,20 @@ class Turtle:
         if self.is_down:
             self.point_list.append(self.position)
             self.primitive_list.append(Line(self.position, new_pos))
-        result=(self.position, new_pos)
+        result = (self.position, new_pos)
         self.position = new_pos
         return result
 
     def left(self, angle):
-        c = cs.make_wrapper(jnp.cos)(self.angle_scale*angle)
-        s = cs.make_wrapper(jnp.sin)(self.angle_scale*angle)
+        c = cs.make_wrapper(jnp.cos)(self.angle_scale * angle)
+        s = cs.make_wrapper(jnp.sin)(self.angle_scale * angle)
         self.change_heading_to(
             rotate(self.heading_vector, (c, s)), turn_dir=TurnDir.LEFT
         )
 
     def right(self, angle):
-        c = cs.make_wrapper(jnp.cos)(self.angle_scale*angle)
-        s = cs.make_wrapper(jnp.sin)(self.angle_scale*angle)
+        c = cs.make_wrapper(jnp.cos)(self.angle_scale * angle)
+        s = cs.make_wrapper(jnp.sin)(self.angle_scale * angle)
         self.change_heading_to(
             rotate(self.heading_vector, (c, s)), turn_dir=TurnDir.RIGHT
         )
@@ -152,8 +173,8 @@ class Turtle:
                 )
                 self.change_heading_to((scale * angle_or_x[0], scale * angle_or_x[0]))
             else:
-                c = cs.make_wrapper(jnp.cos)(self.angle_scale*angle_or_x)
-                s = cs.make_wrapper(jnp.sin)(self.angle_scale*angle_or_x)
+                c = cs.make_wrapper(jnp.cos)(self.angle_scale * angle_or_x)
+                s = cs.make_wrapper(jnp.sin)(self.angle_scale * angle_or_x)
                 self.change_heading_to((c, s))
         else:
             scale = 1.0 / cs.make_wrapper(jnp.sqrt)(angle_or_x**2 + y**2)
@@ -198,11 +219,15 @@ class Turtle:
         with build123d.BuildLine() as l:
             for p in self.primitive_list:
                 if isinstance(p, Line):
-                    p0=cs.unjax(cs.solve(p.points[0]))
-                    p1=cs.unjax(cs.solve(p.points[1]))
+                    p0 = cs.unjax(cs.solve(p.points[0]))
+                    p1 = cs.unjax(cs.solve(p.points[1]))
                     build123d.Line(p0, p1)
                 elif isinstance(p, TArc):
-                    build123d.TangentArc(cs.unjax(cs.solve(p.start_point)), cs.unjax(cs.solve(p.end_point)), tangent=cs.unjax(cs.solve(p.tangent_at_start)))
+                    build123d.TangentArc(
+                        cs.unjax(cs.solve(p.start_point)),
+                        cs.unjax(cs.solve(p.end_point)),
+                        tangent=cs.unjax(cs.solve(p.tangent_at_start)),
+                    )
 
         return l.line
 
@@ -215,35 +240,51 @@ class Turtle:
     @property
     def x(self):
         return self.position[0]
+
     @x.setter
     def x(self, value):
-        cs.magic.zero=self.position[0]-value
+        cs.magic.zero = self.position[0] - value
+        if self.simplify_equations:
+            self.position = (value, self.position[1])
+            # Does not work, it may be underconstrained
+            # self.position=(cs.solve(self.position[0]), self.position[1])
+
     @property
     def y(self):
         return self.position[1]
+
     @y.setter
     def y(self, value):
-        cs.magic.zero=self.position[1]-value
-    
+        cs.magic.zero = self.position[1] - value
+        if self.simplify_equations:
+            self.position = (self.position[0], value)
+            # Does not work, it may be underconstrained
+            # self.position=(self.position[0], cs.solve(self.position[1]))
 
 
 def forward(dist=None):
     if dist is None:
-        dist=cs.var(1)
+        dist = cs.var(1)
     return Turtle.top().forward(dist)
+
 
 def left(angle=None):
     if angle is None:
-        angle=cs.var(1)
+        angle = cs.var(1)
     Turtle.top().left(angle)
+
 
 def heading(angle_or_x_or_dir, y=None):
     Turtle.top().heading(angle_or_x_or_dir, y)
 
+
 def close():
     Turtle.top().close()
 
+
 def pen_down():
     Turtle.top().pen_down()
+
+
 def pen_up():
     Turtle.top().pen_up()

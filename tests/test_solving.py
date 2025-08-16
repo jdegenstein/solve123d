@@ -34,13 +34,16 @@ def unwrap(f):
     return f.__wrapped__
 
 
+cs.set_verbose(True)
+
+
 class SolvingTest(unittest.TestCase):
 
     def test_conversion(self):
-        a=cs.var(0)
-        a.solution=jax.numpy.array(1.0)
-        b=a.solution_as_float_or_none()
-        c=a.solve()
+        a = cs.var(0)
+        a.solution = jax.numpy.array(1.0)
+        b = a.solution_as_float_or_none()
+        c = a.solve()
         self.assertEqual(b, 1.0)
         self.assertEqual(c, 1.0)
 
@@ -118,8 +121,7 @@ class SolvingTest(unittest.TestCase):
 
         test = cs.solve(2.0 - a * 3.0 + b, a - b * 2.0 + 1.0)
 
-        #self.assertTrue(isinstance(test[0], float))
-
+        # self.assertTrue(isinstance(test[0], float))
 
         self.assertAlmostEqual(test[0], 0)
         self.assertAlmostEqual(test[1], 0)
@@ -142,12 +144,11 @@ class SolvingTest(unittest.TestCase):
         cs.magic.zero = 2.0 - a * 3.0 + b
         cs.magic.zero = a - b * 2.0 + 1.0
 
-        a_val=a.solve()
+        a_val = a.solve()
 
         test = cs.solve(2.0 - a * 3.0 + b, a - b * 2.0 + 1.0)
 
-        #self.assertTrue(isinstance(test[0], float))
-
+        # self.assertTrue(isinstance(test[0], float))
 
         self.assertAlmostEqual(test[0], 0)
         self.assertAlmostEqual(test[1], 0)
@@ -167,16 +168,14 @@ class SolvingTest(unittest.TestCase):
 
         para = unwrap(cs.parallel_2d_constraint)
 
-        dist=unwrap(cs.distance_constraint)(cs.solve(pt1), (0, 0), 0)
+        dist = unwrap(cs.distance_constraint)(cs.solve(pt1), (0, 0), 0)
 
-        dist=cs.unjax(dist)
+        dist = cs.unjax(dist)
         self.assertIsInstance(dist, float)
-        dist=cs.unjax(dist)
+        dist = cs.unjax(dist)
         self.assertIsInstance(dist, float)
 
-        self.assertAlmostEqual(
-            dist, r
-        )
+        self.assertAlmostEqual(dist, r)
         self.assertAlmostEqual(
             unwrap(cs.distance_constraint)(cs.solve(pt2), (0, 0), 0), r + d
         )
@@ -210,22 +209,20 @@ class SolvingTest(unittest.TestCase):
         cs.distance_constraint(pt1, (0, 0), r)
         cs.distance_constraint(pt2, (0, 0), r + d)
         cs.line_left_distance_to_point_2d_constraint(((0, 0), (0, 1)), pt1, -w / 2)
-        cs.magic.zero=cs.line_pt_dist(((0, 0), (0, 1)), pt1) + w/2
-        
+        cs.magic.zero = cs.line_pt_dist(((0, 0), (0, 1)), pt1) + w / 2
+
         cs.angle_2d_constraint(((0, 0), (0, 1)), (pt1, pt2), -30 * math.pi / 180.0)
 
         para = unwrap(cs.parallel_2d_constraint)
 
-        dist=unwrap(cs.distance_constraint)(cs.solve(pt1), (0, 0), 0)
+        dist = unwrap(cs.distance_constraint)(cs.solve(pt1), (0, 0), 0)
 
-        dist=cs.unjax(dist)
+        dist = cs.unjax(dist)
         self.assertIsInstance(dist, float)
-        dist=cs.unjax(dist)
+        dist = cs.unjax(dist)
         self.assertIsInstance(dist, float)
 
-        self.assertAlmostEqual(
-            dist, r
-        )
+        self.assertAlmostEqual(dist, r)
         self.assertAlmostEqual(
             unwrap(cs.distance_constraint)(cs.solve(pt2), (0, 0), 0), r + d
         )
