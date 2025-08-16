@@ -27,6 +27,7 @@ license:
 import unittest
 import math
 import solve123d as cs
+import jax
 
 
 def unwrap(f):
@@ -34,6 +35,14 @@ def unwrap(f):
 
 
 class SolvingTest(unittest.TestCase):
+
+    def test_conversion(self):
+        a = cs.var(0)
+        a.solution = jax.numpy.array(1.0)
+        b = a.solution_as_float_or_none()
+        c = a.solve()
+        self.assertEqual(b, 1.0)
+        self.assertEqual(c, 1.0)
 
     def test_scalar_sumconstraint(self):
         a = cs.var(0)
@@ -67,6 +76,7 @@ class SolvingTest(unittest.TestCase):
         self.assertEqual(cs.magic.zero, 0.0)
 
     def test_constraints(self):
+        cs.set_verbose(True)
         aa = [cs.Variable(1), cs.Variable(1.1)]
         bb = cs.var((2, 2.2))
         cc = [cs.var(2.5), 2.66]
@@ -100,6 +110,7 @@ class SolvingTest(unittest.TestCase):
 
         self.assertAlmostEqual(point_p[1].s, 0.1)
         self.assertAlmostEqual(point_p[0].s, 0.1 / math.tan(math.radians(30)))
+        cs.set_verbose(False)
 
     def test_magic(self):
         a = cs.Variable(1.2345)
@@ -108,6 +119,35 @@ class SolvingTest(unittest.TestCase):
         cs.magic.zero = a - b * 2.0 + 1.0
 
         test = cs.solve(2.0 - a * 3.0 + b, a - b * 2.0 + 1.0)
+
+        # self.assertTrue(isinstance(test[0], float))
+
+        self.assertAlmostEqual(test[0], 0)
+        self.assertAlmostEqual(test[1], 0)
+        self.assertAlmostEqual(2.0 - a.s * 3.0 + b.s, 0)
+        self.assertAlmostEqual(a.s - b.s * 2.0 + 1.0, 0)
+
+    def test_overconstrained(self):
+        a = cs.Variable(1.2345)
+        b = cs.var(1.2345)
+        cs.magic.zero = 2.0 - a * 3.0 + b
+        cs.magic.zero = a - b * 2.0 + 1.0
+        cs.magic.zero = a - b * 1.0 + 1.0
+
+        test = cs.solve(2.0 - a * 3.0 + b, a - b * 2.0 + 1.0)
+        print(test)
+
+    def test_presolve_magic(self):
+        a = cs.Variable(1.2345)
+        b = cs.var(1.2345)
+        cs.magic.zero = 2.0 - a * 3.0 + b
+        cs.magic.zero = a - b * 2.0 + 1.0
+
+        a_val = a.solve()
+
+        test = cs.solve(2.0 - a * 3.0 + b, a - b * 2.0 + 1.0)
+
+        # self.assertTrue(isinstance(test[0], float))
 
         self.assertAlmostEqual(test[0], 0)
         self.assertAlmostEqual(test[1], 0)
@@ -127,9 +167,61 @@ class SolvingTest(unittest.TestCase):
 
         para = unwrap(cs.parallel_2d_constraint)
 
+        dist = unwrap(cs.distance_constraint)(cs.solve(pt1), (0, 0), 0)
+
+        dist = cs.unjax(dist)
+        self.assertIsInstance(dist, float)
+        dist = cs.unjax(dist)
+        self.assertIsInstance(dist, float)
+
+        self.assertAlmostEqual(dist, r)
         self.assertAlmostEqual(
-            unwrap(cs.distance_constraint)(cs.solve(pt1), (0, 0), 0), r
+            unwrap(cs.distance_constraint)(cs.solve(pt2), (0, 0), 0), r + d
         )
+        self.assertAlmostEqual(
+            unwrap(cs.line_point_distance_constraint)(((0, 0), (0, 1)), cs.solve(pt1)),
+            w / 2,
+        )
+        l1 = ((0, 0), (0, 1))
+        l2 = (cs.solve(pt1), cs.solve(pt2))
+        self.assertAlmostEqual(
+            unwrap(cs.angle_2d_constraint)(l1, l2, -30 * math.pi / 180.0), 0.0
+        )
+
+        self.assertAlmostEqual(
+            para(
+                (cs.solve(pt1), cs.solve(pt2)),
+                (cs.solve(0.0, 0.0), (0.5, math.sqrt(0.75))),
+            ),
+            0,
+        )
+
+        lcp = unwrap(cs.line_contains_point_2d_constraint)
+        self.assertAlmostEqual(lcp(l2, (pt1[0].s + 0.5, pt1[1].s + math.sqrt(0.75))), 0)
+
+    def test_dovetail_redundant_constraint(self):
+        r = 20
+        d = 5
+        w = 2
+        pt1 = cs.var(0, r)
+        pt2 = cs.var(0, r)
+        cs.distance_constraint(pt1, (0, 0), r)
+        cs.distance_constraint(pt2, (0, 0), r + d)
+        cs.line_left_distance_to_point_2d_constraint(((0, 0), (0, 1)), pt1, -w / 2)
+        cs.magic.zero = cs.line_pt_dist(((0, 0), (0, 1)), pt1) + w / 2
+
+        cs.angle_2d_constraint(((0, 0), (0, 1)), (pt1, pt2), -30 * math.pi / 180.0)
+
+        para = unwrap(cs.parallel_2d_constraint)
+
+        dist = unwrap(cs.distance_constraint)(cs.solve(pt1), (0, 0), 0)
+
+        dist = cs.unjax(dist)
+        self.assertIsInstance(dist, float)
+        dist = cs.unjax(dist)
+        self.assertIsInstance(dist, float)
+
+        self.assertAlmostEqual(dist, r)
         self.assertAlmostEqual(
             unwrap(cs.distance_constraint)(cs.solve(pt2), (0, 0), 0), r + d
         )

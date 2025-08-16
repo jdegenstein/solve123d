@@ -26,17 +26,20 @@ license:
 
 import collections
 import copy
-import operator
 import functools
-import jax
-import jaxopt
-import jax.numpy as jnp
+import operator
+import typing
 
+import jax
+import jax.numpy as jnp
+import jaxopt
 
 jax.config.update("jax_enable_x64", True)
 
 
 # TODO: see if the parameter unpacking-repacking could be replaced easily with pytrees
+
+# Usage of no coverage pragmas: only for "pass" statements due to defensive programming when traversing argument trees (which currently contain only Variable instances, but that may change)
 
 
 def is_iterable(a):  # TODO: support things that aren't sequences?
@@ -87,40 +90,67 @@ class Variable:
         return self.solve()
 
 
-# TODO: refactor common functionality among different substitution methods
-def var(*args):
-    """Helper method. Converts each value in the arguments to Variable(value)
-    Intended usage: var(1,2) is equivalent to (Variable(1), Variable(2))
-     var([1,2]) is equivalent to ([Variable(1), Variable(2)])
-     and so on.
-    """
+def deep_filter(f, *args):
+    """Filters *args through f, like a deep copy (sequences are also filtered)"""
     if len(args) == 1:
         a = args[0]
     else:
         a = args
     if isinstance(a, collections.abc.Sequence):
-        return a.__class__(var(b) for b in a)
+        return a.__class__(deep_filter(f, b) for b in a)
     else:
-        return Variable(a)
+        return f(a)
 
 
-def solve(*args):
-    """Helper method. Converts each Variable in the argument to the solution, similarly to var()
-    Intended usage: solve(a, b) is equivalent to (a.s, b.s)
-    Note that basic arithmetics is also supported, solve(a+1, b) would also work as expected
-    """
-    if len(args) == 1:
-        a = args[0]
-    else:
-        a = args
-    if isinstance(a, collections.abc.Sequence):
-        return a.__class__(solve(b) for b in a)
-    elif isinstance(a, Variable):
-        return a.solve()
-    elif isinstance(a, WrappedFunction):
-        return a.function(solve(*a.arguments))
-    else:
-        return a
+def var(*a):
+    return deep_filter(Variable, *a)
+
+
+def unjax(*a):
+    def f(a):
+        if isinstance(a, jax.Array) and a.size == 1:
+            return float(a)
+        else:
+            return a
+
+    return deep_filter(f, *a)
+
+
+def solve(*a):
+    def f(a):
+        if isinstance(a, Variable):
+            return a.solve()
+        elif isinstance(a, WrappedFunction):
+            return a.function(*solve(a.arguments))
+        else:
+            return a
+
+    return deep_filter(f, *a)
+
+
+# TODO: figure type hints to make this work correctly with linters
+# def make_deep_filter(f: typing.Callable[[typing.Any], typing.Any]) -> typing.Callable[..., typing.Any] :
+#     return lambda *a: deep_filter(f, *a)
+
+# @make_deep_filter
+# def var(a):
+#     return Variable(a)
+
+# @make_deep_filter
+# def unjax(a):
+#     if isinstance(a, jax.Array) and a.size == 1:
+#         return float(a)
+#     else:
+#         return a
+
+# @make_deep_filter
+# def solve(a):
+#     if isinstance(a, Variable):
+#         return a.solve()
+#     elif isinstance(a, WrappedFunction):
+#         return a.function(*solve(a.arguments))
+#     else:
+#         return a
 
 
 def make_wrapper(f):
@@ -132,20 +162,35 @@ def make_wrapper(f):
 
     @functools.wraps(f)
     def result(*args_of_first_invocation):
-        def inner_f(*args_of_solver_invocation):
-            def process_argument(i, a):
-                if isinstance(a, WrappedFunction):
-                    return a.function(*args_of_solver_invocation[i])
-                elif isinstance(a, Variable) and a.solution is None:
-                    return args_of_solver_invocation[i][0]
-                else:
-                    return a
+        indices = []
 
-            return f(*[process_argument(i, a) for i, a in enumerate(args_of_first_invocation)])
+        def inner_f(*args_of_solver_invocation):
+            nonlocal args_of_first_invocation
+            nonlocal indices
+            index = 0
+
+            def arg_unflatten_filter(a):
+                nonlocal index, indices, args_of_solver_invocation, args_of_first_invocation
+                if isinstance(a, WrappedFunction):
+                    result = a.function(*args_of_solver_invocation[indices[index]])
+                elif isinstance(a, Variable):
+                    if a.solution is None:
+                        result = args_of_solver_invocation[indices[index]][0]
+                    else:
+                        result = a.solution_as_float_or_none()
+                else:
+                    result = a
+                index += 1
+                return result
+
+            return f(*deep_filter(arg_unflatten_filter, args_of_first_invocation))
 
         relevant_args = []
         args_for_bypass = []
-        for i, a in enumerate(args_of_first_invocation):
+
+        # TODO: handle arguments that are tuples of tuples etc
+        def arg_flatten_filter(a):
+            indices.append(len(relevant_args))
             if isinstance(a, WrappedFunction):
                 relevant_args.append(a.arguments)
             elif isinstance(a, Variable):
@@ -155,6 +200,8 @@ def make_wrapper(f):
                     args_for_bypass.append(a.solution_as_float_or_none())
             else:
                 args_for_bypass.append(a)
+
+        deep_filter(arg_flatten_filter, args_of_first_invocation)
         # If none of arguments will be substituted, evaluate wrapped function here and now instead of delaying evaluation
         if len(relevant_args) == 0:
             return f(*args_for_bypass)
@@ -171,6 +218,8 @@ class WrappedFunction:
         for a in recursive_unpack(self.arguments):
             if isinstance(a, Variable):
                 a.constraints.add(self)
+            else:  # pragma: no cover
+                pass
         return self
 
     # arguments is a list of variables that are parameters to the function
@@ -232,42 +281,25 @@ magic = MagicalZero()
 
 
 # Makes a deep copy but replacing variable instances.
+# TODO: replace with deep_filter
 def _recursive_substitute(args, state, indices):
-    """Makes a deep coopy but substitutes Variables with values from state"""
+    """Makes a deep copy but substitutes Variables with values from state"""
 
-    def recursive_substitute_inner(arg):
-        def process(a):
-            if isinstance(a, Variable):
-                return state[indices[a]]
-            elif is_iterable(a):
-                return recursive_substitute_inner(a)
-            else:
-                return a
+    def f(a):
+        if isinstance(a, Variable):
+            return state[indices[a]]
+        else:  # pragma: no cover
+            return a
 
-        # TODO: refactor to use same path for tuples and arrays
-        if isinstance(arg, tuple):
-            return tuple(process(a) for a in arg)
-        else:
-            result = copy.copy(arg)
-            for i, a in enumerate(arg):
-                if isinstance(a, Variable):
-                    result[i] = state[indices[a]]
-                elif is_iterable(a):
-                    result[i] = recursive_substitute_inner(a)
-            return result
-
-    return recursive_substitute_inner(args)
+    return deep_filter(f, args)
 
 
-# def recursive_set_solution(args, state, indices):
-#     def recursive_set_solution_inner(arg):
-#         for i, a in enumerate(arg):
-#             if isinstance(a, Variable):
-#                 a.solution = state[indices[a]]
-#             elif is_iterable(a):
-#                 recursive_set_solution_inner(a)
+verbose = False
 
-#     recursive_set_solution_inner(args)
+
+def set_verbose(v):
+    global verbose
+    verbose = v
 
 
 def solve_everything(first_variable: Variable):
@@ -293,24 +325,30 @@ def solve_everything(first_variable: Variable):
                 all_variables.add(a)
                 for c in a.constraints:
                     recurse_constraint(c)
+        else:  # pragma: no cover
+            pass
 
     recurse_variable(first_variable)
 
     variable_indices = dict()
     cur_index = 0
     for v in all_variables:
-        print(v.initial_value)
         variable_indices[v] = cur_index
         cur_index += 1
 
     params = jnp.array([v.initial_value for v in all_variables], dtype=jnp.float64)
 
+    residuals_count = 0
+
     # Make one function to solve, out of all known constraints
     def all_constraints_function(input_state):
+        nonlocal residuals_count
         # Todo: create jnp.array directly
         result = []
         for c in all_constraints:
             args = c.arguments
+            if verbose:
+                print(args)
             args_copy = _recursive_substitute(args, input_state, variable_indices)
             # r=c.function(*(input_state[variable_indices[v]] for v in c.arguments))
             r = c.function(*args_copy)
@@ -318,7 +356,9 @@ def solve_everything(first_variable: Variable):
                 result += r
             else:
                 result.append(r)
-        return jnp.array(result)
+        residuals_count = len(result)
+        jax_result = jnp.array(result)
+        return jax_result
 
     fast_residual = jax.jit(all_constraints_function)
     # jac = jax.jacfwd(all_constraints_function)
@@ -335,9 +375,22 @@ def solve_everything(first_variable: Variable):
     result_params, _ = jit_solver(params)
 
     for v in all_variables:
-        v.solution = result_params[variable_indices[v]]
+        # If we want to deal with jax.Array values
+        # v.solution = result_params[variable_indices[v]]
+        v.solution = float(result_params[variable_indices[v]])
 
-    print(f"initial params = {params} , result_params={result_params}")
+    if residuals_count < len(params):
+        print(
+            f"Under constrained: {len(params)} degrees of freedom but only {residuals_count} constraints"
+        )
+
+    if residuals_count > len(params):
+        print(
+            f"Over or redundantly constrained: {len(params)} degrees of freedom and {residuals_count} constraints"
+        )
+
+    if verbose:
+        print(f"initial params = {params} , result_params={result_params}")
     # print(fast_residual(params))
     # print(fast_jac(params))
 
@@ -349,7 +402,9 @@ def make_constraint(f):
 
     @functools.wraps(f)
     def result(*args):
-        return WrappedFunction(f, [*args]).make_zero()
+        wrapper_f = make_wrapper(f)
+        wrapper = wrapper_f(*args)
+        return wrapper.make_zero()
 
     return result
 
@@ -384,7 +439,7 @@ def distance_constraint(a, b, c):
 
 @make_constraint
 def coincident(a, b):
-    """Coincident constraint, requires that a=b . 
+    """Coincident constraint, requires that a=b .
     It is faster to just use the same variable for a and b instead."""
     if is_iterable(a):
         return [(a[i] - b[i]) for i, v in enumerate(a)]
@@ -407,7 +462,9 @@ def line_point_distance_constraint(line, point, desired_dist=0.0):
     ptdelta = pt - p0
     dirnorm2 = jnp.dot(direction, direction)
     return (
-        jnp.linalg.norm(jnp.subtract(ptdelta, direction * (jnp.dot(direction, ptdelta) / dirnorm2)))
+        jnp.linalg.norm(
+            jnp.subtract(ptdelta, direction * (jnp.dot(direction, ptdelta) / dirnorm2))
+        )
         - desired_dist
     )
 
@@ -443,6 +500,14 @@ def line_left_distance_to_point_2d_constraint(line, point, desired_dist=0.0):
     return (
         direction[0] * dir_to_pt[1] - direction[1] * dir_to_pt[0]
     ) / jnp.linalg.norm(direction) - desired_dist
+
+
+def line_pt_dist(line, point):
+    direction = (line[1][0] - line[0][0], line[1][1] - line[0][1])
+    dir_to_pt = (point[0] - line[0][0], point[1] - line[0][1])
+    return (direction[0] * dir_to_pt[1] - direction[1] * dir_to_pt[0]) / make_wrapper(
+        jnp.sqrt
+    )(direction[0] ** 2 + direction[1] ** 2)
 
 
 @make_constraint
