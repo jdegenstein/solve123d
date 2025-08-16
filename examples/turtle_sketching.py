@@ -3,41 +3,27 @@ import solve123d as cs
 from solve123d.turtle import *
 from ocp_vscode import *
 
-
-# with Turtle() as t:
-#     heading(1, 0)
-#     t.corner_radius=1
-#     forward(10)
-#     left(math.radians(120))
-#     forward(10)
-#     left(math.radians(120))
-#     forward()
-#     left(math.radians(120))
-#     close()
-
-# #print(pts)
-# line=t.to_build123d()
-
 with Turtle() as t:
-    pen_up()
+    pen_up()  # Disables appending of primitives (moves work the same)
     heading(270 + 25)
     forward(33 - 10)
-    pen_down()
+    pen_down()  # Start adding primitives, we start at the point that is 33-10 units away from the circle center.
     forward(10)
     left(90)
-    forward()
-    t.x = 33
+    forward()  # Move forward an unknown distance (the constraint solver will solve for the distance that meets constraints)
+    t.x = 33  # Constrain turtle's x coordinate to 33 (which resolves the unknown amount above)
     heading(90)
-    forward()
+    forward()  # Another unknown distance move
     heading(180 - 35)
-    forward()
+    forward()  # and another
     heading(90)
     forward(5)
     heading(180)
     forward(6)
-    t.x = -8
+    # Now at upper left corner, whose position is known
+    t.x = -8  # Two constraints for two unknown-distance moves above
     t.y = 120
-
+    # The upper rectangle thingy
     heading(-90)
     forward(22)
     heading(0)
@@ -46,79 +32,34 @@ with Turtle() as t:
     forward(5)
     heading(-40)
     forward()
-    t.corner_radius = 13
-    heading(-90)
-    t.x = 33 - 10
+    # Uppermost arc
+    t.corner_radius = 13  # With corner_radius set to nonzero, all turns will add arcs
+    heading(-90)  # Create the topmost arc
+    t.x = 33 - 10  # Constrain x at the end of the arc
     forward()
     heading(180 + (90 - 65))
-    l = forward()
+    l = forward()  # Remember the line created by this forward move
     t.x = 0
     t.y = 33
-    t.corner_radius = 0
+    t.corner_radius = 0  # No more arcs, do sharp corners
     heading(-90)
-    forward()
+    forward()  # Unknown distance move at the "10" constraint in the sketch right above the hole
+
+    # Distance from the saved line, to turtle position, must be 10 (will solve for zero of the equation on the right side).
+    # Distances are signed, positive leftwards of the line, negative rightwards.
     cs.magic.zero = cs.line_pt_dist(l, t.position) - 10
+
     heading(90 - 65)
     forward()
-    t.corner_radius = 13
-    heading(-90)
-    t.x = 33 - 10
+    t.corner_radius = 13  # Do the last two arcs
+    heading(-90)  # This adds 2nd arc from the bottom
+    t.x = 33 - 10  # Constraint needs to be done at the end of the arc
     forward()
     heading(180 + 25)
     forward()
-    t.corner_radius = 0
-    close()
+    t.corner_radius = 0  # Turn arcs off again
+    close()  # Solve for the end point to match exactly the starting point
 
 line = t.to_build123d()
 face = build123d.make_face(line)
 show(line, build123d.Pos(0, 0, 1) * face)
-
-
-"""
-pen_up()
-heading(-Y)
-left(25)
-forward(33-10)
-pen_down()
-forward(10)
-left(90)
-l0=forward()
-magic.x=33
-heading(+Y)
-forward()
-heading(180-35)
-forward()
-heading(+Y)
-forward(5)
-heading(-X)
-forward(6)
-magic.x=-8
-magic.y=120
-heading(-Y)
-forward()
-heading(+X)
-forward(6)
-heading(+Y)
-forward(5)
-heading(-40)
-forward()
-turn_radius(13)
-heading(-Y)
-magic.x=33-10
-forward()
-heading(90-65)
-l1=forward()
-turn_radius(0)
-magic.y=33
-heading(-Y)
-forward()
-heading(-l1)
-distance(l1, 10)
-turn_radius(13)
-forward()
-heading(-Y)
-forward()
-heading(-l0)
-turn_radius(0)
-close()
-"""
