@@ -87,52 +87,38 @@ class Variable:
         return self.solve()
 
 
-# TODO: refactor common functionality among different substitution methods
-def var(*args):
-    """Helper method. Converts each value in the arguments to Variable(value)
-    Intended usage: var(1,2) is equivalent to (Variable(1), Variable(2))
-     var([1,2]) is equivalent to ([Variable(1), Variable(2)])
-     and so on.
-    """
+def deep_filter(f, *args):
     if len(args) == 1:
         a = args[0]
     else:
         a = args
     if isinstance(a, collections.abc.Sequence):
-        return a.__class__(var(b) for b in a)
+        return a.__class__(deep_filter(f, b) for b in a)
     else:
-        return Variable(a)
+        return f(a)
 
-def unjax(*args):
-    if len(args) == 1:
-        a = args[0]
-    else:
-        a = args
-    if isinstance(a, collections.abc.Sequence):
-        return a.__class__(unjax(b) for b in a)
-    elif isinstance(a, jax.Array) and a.size==1:
+def make_deep_filter(f):
+    return lambda *a : deep_filter(f, *a)
+
+
+@make_deep_filter
+def var(a):
+    return Variable(a)
+
+@make_deep_filter
+def unjax(a):
+    if isinstance(a, jax.Array) and a.size==1:
         return float(a)
     else:
         return a
-
-def solve(*args):
-    """Helper method. Converts each Variable in the argument to the solution, similarly to var()
-    Intended usage: solve(a, b) is equivalent to (a.s, b.s)
-    Note that basic arithmetics is also supported, solve(a+1, b) would also work as expected
-    """
-    if len(args) == 1:
-        a = args[0]
-    else:
-        a = args
-    if isinstance(a, collections.abc.Sequence):
-        return a.__class__(solve(b) for b in a)
-    elif isinstance(a, Variable):
+@make_deep_filter
+def solve(a):
+    if isinstance(a, Variable):
         return a.solve()
     elif isinstance(a, WrappedFunction):
         return a.function(*solve(a.arguments))
     else:
         return a
-
 
 def make_wrapper(f):
     """
