@@ -39,6 +39,8 @@ jax.config.update("jax_enable_x64", True)
 
 # TODO: see if the parameter unpacking-repacking could be replaced easily with pytrees
 
+# Usage of no coverage pragmas: only for "pass" statements due to defensive programming when traversing argument trees (which currently contain only Variable instances, but that may change)
+
 
 def is_iterable(a):  # TODO: support things that aren't sequences?
     """Used to decide what values to iterate"""
@@ -216,6 +218,8 @@ class WrappedFunction:
         for a in recursive_unpack(self.arguments):
             if isinstance(a, Variable):
                 a.constraints.add(self)
+            else:  # pragma: no cover
+                pass
         return self
 
     # arguments is a list of variables that are parameters to the function
@@ -321,6 +325,8 @@ def solve_everything(first_variable: Variable):
                 all_variables.add(a)
                 for c in a.constraints:
                     recurse_constraint(c)
+        else:  # pragma: no cover
+            pass
 
     recurse_variable(first_variable)
 

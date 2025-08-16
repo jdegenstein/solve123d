@@ -34,9 +34,6 @@ def unwrap(f):
     return f.__wrapped__
 
 
-cs.set_verbose(True)
-
-
 class SolvingTest(unittest.TestCase):
 
     def test_conversion(self):
@@ -79,6 +76,7 @@ class SolvingTest(unittest.TestCase):
         self.assertEqual(cs.magic.zero, 0.0)
 
     def test_constraints(self):
+        cs.set_verbose(True)
         aa = [cs.Variable(1), cs.Variable(1.1)]
         bb = cs.var((2, 2.2))
         cc = [cs.var(2.5), 2.66]
@@ -112,6 +110,7 @@ class SolvingTest(unittest.TestCase):
 
         self.assertAlmostEqual(point_p[1].s, 0.1)
         self.assertAlmostEqual(point_p[0].s, 0.1 / math.tan(math.radians(30)))
+        cs.set_verbose(False)
 
     def test_magic(self):
         a = cs.Variable(1.2345)
