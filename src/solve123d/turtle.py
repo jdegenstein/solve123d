@@ -28,6 +28,7 @@ import copy
 from enum import Enum
 import collections
 import solve123d as cs
+import jax
 import jax.numpy as jnp
 import build123d
 import math
@@ -151,37 +152,37 @@ class Turtle:
         self.position = new_pos
         return result
 
-    def left(self, angle):
+    def left(self, angle) -> TArc:
         c = cs.make_wrapper(jnp.cos)(self.angle_scale * angle)
         s = cs.make_wrapper(jnp.sin)(self.angle_scale * angle)
-        self.change_heading_to(
+        return self.change_heading_to(
             rotate(self.heading_vector, (c, s)), turn_dir=TurnDir.LEFT
         )
 
-    def right(self, angle):
-        c = cs.make_wrapper(jnp.cos)(self.angle_scale * angle)
-        s = cs.make_wrapper(jnp.sin)(self.angle_scale * angle)
-        self.change_heading_to(
+    def right(self, angle) -> TArc:
+        c = cs.make_wrapper(jnp.cos)(-self.angle_scale * angle)
+        s = cs.make_wrapper(jnp.sin)(-self.angle_scale * angle)
+        return self.change_heading_to(
             rotate(self.heading_vector, (c, s)), turn_dir=TurnDir.RIGHT
         )
 
-    def heading(self, angle_or_x, y=None):
+    def heading(self, angle_or_x, y=None) -> TArc:
         if y is None:
             if isinstance(angle_or_x, collections.abc.Sequence):
                 scale = 1.0 / cs.make_wrapper(jnp.sqrt)(
                     angle_or_x[0] ** 2 + angle_or_x[1] ** 2
                 )
-                self.change_heading_to((scale * angle_or_x[0], scale * angle_or_x[0]))
+                return self.change_heading_to((scale * angle_or_x[0], scale * angle_or_x[1]))
             else:
                 c = cs.make_wrapper(jnp.cos)(self.angle_scale * angle_or_x)
                 s = cs.make_wrapper(jnp.sin)(self.angle_scale * angle_or_x)
-                self.change_heading_to((c, s))
+                return self.change_heading_to((c, s))
         else:
             scale = 1.0 / cs.make_wrapper(jnp.sqrt)(angle_or_x**2 + y**2)
-            self.change_heading_to((scale * angle_or_x, scale * y))
+            return self.change_heading_to((scale * angle_or_x, scale * y))
 
-    def change_heading_to(self, new_heading_vector, turn_dir: TurnDir = TurnDir.AUTO):
-        if self.corner_radius != 0:
+    def change_heading_to(self, new_heading_vector, turn_dir: TurnDir = TurnDir.AUTO) -> TArc:
+        if isinstance(self.corner_radius, (cs.WrappedFunction, cs.Variable, jax.Array)) or self.corner_radius != 0:
             if turn_dir == TurnDir.AUTO:
                 if all_values(self.heading_vector, new_heading_vector):
                     delta = rotate(new_heading_vector, conjugate(self.heading_vector))
@@ -198,18 +199,27 @@ class Turtle:
             center = add(self.position, center_offset)
             center_offset_new = rotate(new_heading_vector, (0, d * self.corner_radius))
             new_point = sub(center, center_offset_new)
+
+            result = TArc(
+                self.position,
+                self.heading_vector,
+                new_point,
+                center,
+                self.corner_radius,
+            )
             if self.is_down:
-                self.primitive_list.append(
-                    TArc(
-                        self.position,
-                        self.heading_vector,
-                        new_point,
-                        center,
-                        self.corner_radius,
-                    )
-                )
+                self.primitive_list.append(result)
             self.position = new_point
+        else: # corner_radius==0 , return zero radius arc for consistently
+            result = TArc(
+                self.position,
+                self.heading_vector,
+                self.position,
+                self.position,
+                self.corner_radius,
+            )
         self.heading_vector = new_heading_vector
+        return result
 
     def close(self):
         cs.magic.zero = self.position[0] - self.point_list[0][0]
@@ -271,11 +281,16 @@ def forward(dist=None):
 def left(angle=None):
     if angle is None:
         angle = cs.var(1)
-    Turtle.top().left(angle)
+    return Turtle.top().left(angle)
+
+def right(angle=None):
+    if angle is None:
+        angle = cs.var(1)
+    return Turtle.top().right(angle)
 
 
 def heading(angle_or_x_or_dir, y=None):
-    Turtle.top().heading(angle_or_x_or_dir, y)
+    return Turtle.top().heading(angle_or_x_or_dir, y)
 
 
 def close():

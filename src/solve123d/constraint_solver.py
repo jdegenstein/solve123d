@@ -222,6 +222,14 @@ class WrappedFunction:
                 pass
         return self
 
+    @property
+    def magic(self):
+        return self
+
+    @magic.setter
+    def magic(self, v):
+        (self - v).make_zero()
+
     # arguments is a list of variables that are parameters to the function
     def __init__(self, function_or_variable, arguments=None):
         # Trivial case of wrapping a Variable in a Function

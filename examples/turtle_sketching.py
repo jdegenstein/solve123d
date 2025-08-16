@@ -1,7 +1,33 @@
+"""
+Turtle sketching example
+
+name: turtle_sketching.py
+by:   Dmytry Lavrov
+date: August 2025
+desc:
+    Demo of turtle - inspired construction, based on a TooTallToby challenge
+license:
+
+    Copyright 2025 Dmytry Lavrov
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+"""
+
 import math
 import solve123d as cs
 from solve123d.turtle import *
-from ocp_vscode import *
+import ocp_vscode
 
 with Turtle() as t:
     pen_up()  # Disables appending of primitives (moves work the same)
@@ -62,4 +88,4 @@ with Turtle() as t:
 
 line = t.to_build123d()
 face = build123d.make_face(line)
-show(line, build123d.Pos(0, 0, 1) * face)
+ocp_vscode.show(line, build123d.Pos(0, 0, 1) * face)

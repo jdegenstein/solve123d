@@ -116,9 +116,9 @@ class SolvingTest(unittest.TestCase):
         a = cs.Variable(1.2345)
         b = cs.var(1.2345)
         cs.magic.zero = 2.0 - a * 3.0 + b
-        cs.magic.zero = a - b * 2.0 + 1.0
+        (a - b * 2.0).magic = -1
 
-        test = cs.solve(2.0 - a * 3.0 + b, a - b * 2.0 + 1.0)
+        test = cs.solve((2.0 - a * 3.0 + b).magic, a - b * 2.0 + 1.0)
 
         # self.assertTrue(isinstance(test[0], float))
 
