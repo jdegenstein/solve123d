@@ -172,7 +172,9 @@ class Turtle:
                 scale = 1.0 / cs.make_wrapper(jnp.sqrt)(
                     angle_or_x[0] ** 2 + angle_or_x[1] ** 2
                 )
-                return self.change_heading_to((scale * angle_or_x[0], scale * angle_or_x[1]))
+                return self.change_heading_to(
+                    (scale * angle_or_x[0], scale * angle_or_x[1])
+                )
             else:
                 c = cs.make_wrapper(jnp.cos)(self.angle_scale * angle_or_x)
                 s = cs.make_wrapper(jnp.sin)(self.angle_scale * angle_or_x)
@@ -181,8 +183,13 @@ class Turtle:
             scale = 1.0 / cs.make_wrapper(jnp.sqrt)(angle_or_x**2 + y**2)
             return self.change_heading_to((scale * angle_or_x, scale * y))
 
-    def change_heading_to(self, new_heading_vector, turn_dir: TurnDir = TurnDir.AUTO) -> TArc:
-        if isinstance(self.corner_radius, (cs.WrappedFunction, cs.Variable, jax.Array)) or self.corner_radius != 0:
+    def change_heading_to(
+        self, new_heading_vector, turn_dir: TurnDir = TurnDir.AUTO
+    ) -> TArc:
+        if (
+            isinstance(self.corner_radius, (cs.WrappedFunction, cs.Variable, jax.Array))
+            or self.corner_radius != 0
+        ):
             if turn_dir == TurnDir.AUTO:
                 if all_values(self.heading_vector, new_heading_vector):
                     delta = rotate(new_heading_vector, conjugate(self.heading_vector))
@@ -210,7 +217,7 @@ class Turtle:
             if self.is_down:
                 self.primitive_list.append(result)
             self.position = new_point
-        else: # corner_radius==0 , return zero radius arc for consistently
+        else:  # corner_radius==0 , return zero radius arc for consistently
             result = TArc(
                 self.position,
                 self.heading_vector,
@@ -238,6 +245,8 @@ class Turtle:
                         cs.unjax(cs.solve(p.end_point)),
                         tangent=cs.unjax(cs.solve(p.tangent_at_start)),
                     )
+                else:  # pragma: no cover
+                    raise RuntimeError("unsupported primitive for build123d")
 
         return l.line
 
@@ -280,12 +289,13 @@ def forward(dist=None):
 
 def left(angle=None):
     if angle is None:
-        angle = cs.var(1)
+        angle = cs.var(1.0 / Turtle.top().angle_scale)
     return Turtle.top().left(angle)
+
 
 def right(angle=None):
     if angle is None:
-        angle = cs.var(1)
+        angle = cs.var(1.0 / Turtle.top().angle_scale)
     return Turtle.top().right(angle)
 
 

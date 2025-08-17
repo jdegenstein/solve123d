@@ -81,3 +81,6 @@ write_to = "src/solve123d/_version.py"
 [tool.black]
 target-version = ["py310", "py311", "py312", "py313"]
 line-length = 88
+
+[tool.pytest.ini_options]
+addopts = "--cov=your_package_name --cov-report=term-missing"
