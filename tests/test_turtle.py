@@ -34,7 +34,7 @@ class TurtleTest(unittest.TestCase):
     # TODO: more coverage for Turtle
 
     def test_arc_error(self):
-        exepted = False
+        excepted = False
         try:
             with Turtle() as t:
                 t.simplify_equations = False
@@ -46,13 +46,15 @@ class TurtleTest(unittest.TestCase):
                 t.x = 10
                 t.y = 10
                 t.corner_radius = 0
-                right()  ## ends up turning it 180 degrees wrong way and walking backwards
+                right()  ## ends up turning it 180 degrees wrong way and walking backwards TODO: fix or output a warning when that happens
                 l = cs.var(1)
                 forward(l)
                 t.x = 20
                 t.y = 20
                 t.corner_radius = 2
-                heading(90)
+                heading(
+                    90
+                )  # this statement should throw because direction is variables
 
         except RuntimeError:
             excepted = True
@@ -83,7 +85,7 @@ class TurtleTest(unittest.TestCase):
 
             ocp_vscode.show(face)
 
-    def test_too_tall_toby(self):
+    def too_tall_toby(self):
         """See examples/turtle_sketching.py for better code. This does weird stuff to increase coverage"""
         with Turtle() as t:
             pen_up()  # Disables appending of primitives (moves work the same)
@@ -172,6 +174,12 @@ class TurtleTest(unittest.TestCase):
             places=5,
             msg="Note: the value was not independently calculated",
         )
+
+    def test_too_tall_toby(self):
+        self.too_tall_toby()
+        cs.set_opportunistic(True)
+        self.too_tall_toby()
+        cs.set_opportunistic(False)
 
 
 if __name__ == "__main__":  # pragma: no cover
