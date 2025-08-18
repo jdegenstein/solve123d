@@ -69,6 +69,9 @@ all = [
     "solve123d[development]",
     "solve123d[docs]"    
 ]
+test = [
+    "solve123d[development]"
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -83,4 +86,19 @@ target-version = ["py310", "py311", "py312", "py313"]
 line-length = 88
 
 [tool.pytest.ini_options]
-addopts = "--cov=your_package_name --cov-report=term-missing"
+addopts = "--cov=solve123d --cov-report=term-missing"
+
+[tool.tox]
+requires = ["tox>=4.19"]
+env_list = ["3.13", "3.12", "type"]
+
+[tool.tox.env_run_base]
+allowlist_externals = ["pytest"]
+description = "Run test under {base_python}"
+commands = [["pytest"]]
+# commands = [["python", "-m", "pytest"]]
+
+[tool.tox.env.type]
+description = "run type check on code base"
+deps = ["mypy==1.11.2", "types-cachetools>=5.5.0.20240820", "types-chardet>=5.0.4.6"]
+commands = [["mypy", "src{/}tox"], ["mypy", "tests"]]

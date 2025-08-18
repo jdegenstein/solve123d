@@ -154,6 +154,23 @@ class SolvingTest(unittest.TestCase):
         self.assertAlmostEqual(2.0 - a.s * 3.0 + b.s, 0)
         self.assertAlmostEqual(a.s - b.s * 2.0 + 1.0, 0)
 
+    def test_presolve_magic_2(self):
+        a = cs.Variable(1.2345)
+        b = cs.var(1.2345)
+        cs.magic.zero = 2.0 - a * 3.0 + b
+        cs.magic.zero = a - b * 2.0 + 1.0
+
+        cs.solve_everything(a + b)
+
+        test = cs.solve(2.0 - a * 3.0 + b, a - b * 2.0 + 1.0)
+
+        # self.assertTrue(isinstance(test[0], float))
+
+        self.assertAlmostEqual(test[0], 0)
+        self.assertAlmostEqual(test[1], 0)
+        self.assertAlmostEqual(2.0 - a.s * 3.0 + b.s, 0)
+        self.assertAlmostEqual(a.s - b.s * 2.0 + 1.0, 0)
+
     def test_dovetail(self):
         r = 20
         d = 5

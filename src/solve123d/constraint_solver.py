@@ -37,8 +37,23 @@ import jaxopt
 jax.config.update("jax_enable_x64", True)
 
 
-# TODO: see if the parameter unpacking-repacking could be replaced easily with pytrees
+verbose = False
 
+
+def set_verbose(v=True):
+    global verbose
+    verbose = v
+
+
+opportunistic = False
+
+
+def set_opportunistic(v=True):
+    global opportunistic
+    opportunistic = v
+
+
+# TODO: see if the parameter unpacking-repacking could be replaced easily with pytrees
 # Usage of no coverage pragmas: only for "pass" statements due to defensive programming when traversing argument trees (which currently contain only Variable instances, but that may change)
 
 
@@ -162,49 +177,53 @@ def make_wrapper(f):
 
     @functools.wraps(f)
     def result(*args_of_first_invocation):
-        indices = []
+        var_to_index = {}
 
         def inner_f(*args_of_solver_invocation):
             nonlocal args_of_first_invocation
-            nonlocal indices
-            index = 0
 
             def arg_unflatten_filter(a):
-                nonlocal index, indices, args_of_solver_invocation, args_of_first_invocation
+                nonlocal args_of_solver_invocation, args_of_first_invocation
                 if isinstance(a, WrappedFunction):
-                    result = a.function(*args_of_solver_invocation[indices[index]])
+                    # result = a.function(*args_of_solver_invocation[indices[index]])
+                    result = a.function(*(arg_unflatten_filter(b) for b in a.arguments))
                 elif isinstance(a, Variable):
                     if a.solution is None:
-                        result = args_of_solver_invocation[indices[index]][0]
+                        # result = args_of_solver_invocation[indices[index]][0]
+                        result = args_of_solver_invocation[var_to_index[a]]
                     else:
                         result = a.solution_as_float_or_none()
                 else:
                     result = a
-                index += 1
                 return result
 
             return f(*deep_filter(arg_unflatten_filter, args_of_first_invocation))
 
         relevant_args = []
-        args_for_bypass = []
 
-        # TODO: handle arguments that are tuples of tuples etc
+        # Flattens and deduplicates arguments
         def arg_flatten_filter(a):
-            indices.append(len(relevant_args))
             if isinstance(a, WrappedFunction):
-                relevant_args.append(a.arguments)
+                # relevant_args.append(a.arguments)
+                for b in a.arguments:  # shallowly append child arguments
+                    arg_flatten_filter(b)
+                return a
             elif isinstance(a, Variable):
-                if a.solution is None:
-                    relevant_args.append([a])
-                else:
-                    args_for_bypass.append(a.solution_as_float_or_none())
+                if a not in var_to_index:
+                    var_to_index[a] = len(relevant_args)
+                    if a.solution is None:
+                        relevant_args.append(a)
+                    else:
+                        return a.solution_as_float_or_none()
             else:
-                args_for_bypass.append(a)
+                return a
 
         deep_filter(arg_flatten_filter, args_of_first_invocation)
         # If none of arguments will be substituted, evaluate wrapped function here and now instead of delaying evaluation
+        # TODO: make it bypass the inner_f as well?
         if len(relevant_args) == 0:
-            return f(*args_for_bypass)
+            return inner_f()
+            # return f(*bypass)
         return WrappedFunction(inner_f, relevant_args)
 
     return result
@@ -215,11 +234,16 @@ class WrappedFunction:
 
     def make_zero(self):
         """Creates a constraint that the wrapped function equates to zero"""
+        variables_to_solve = set()
         for a in recursive_unpack(self.arguments):
             if isinstance(a, Variable):
                 a.constraints.add(self)
+                variables_to_solve.add(a)
             else:  # pragma: no cover
                 pass
+        if opportunistic:  # Attempt to solve as soon as possible
+            for a in variables_to_solve:
+                solve_everything(a, solve_even_if_underconstrained=False)
         return self
 
     @property
@@ -302,43 +326,64 @@ def _recursive_substitute(args, state, indices):
     return deep_filter(f, args)
 
 
-verbose = False
-
-
-def set_verbose(v):
-    global verbose
-    verbose = v
-
-
-def solve_everything(first_variable: Variable):
+def solve_everything(
+    first_variable_or_function: Variable | WrappedFunction,
+    solve_even_if_underconstrained=True,
+):
     """Solves all constraints and variables associated with the provided argument.
-    :param first_variable: Variable the variable to use as starting point for traversal.
+    :param first_variable: the variable to use as starting point for traversal.
     """
-    print("Constraint solver invoked")
+    if verbose:
+        print("Constraint solver invoked")
     all_variables = set()
     all_constraints = set()
 
-    def recurse_constraint(c):
-        if c not in all_constraints:
-            all_constraints.add(c)
-            for a in c.arguments:
-                recurse_variable(a)
-
-    def recurse_variable(a):
-        if is_iterable(a):
-            for v in a:
-                recurse_variable(v)
-        elif isinstance(a, Variable):
-            if a not in all_variables:
-                all_variables.add(a)
-                for c in a.constraints:
-                    recurse_constraint(c)
+    def filter_item(a):
+        if isinstance(a, Variable):
+            if a.solution is None:
+                if a not in all_variables:
+                    all_variables.add(a)
+                    deep_filter(filter_item, *a.constraints)
+        elif isinstance(a, WrappedFunction):
+            if a not in all_constraints:
+                all_constraints.add(a)
+                deep_filter(filter_item, a.arguments)
         else:  # pragma: no cover
             pass
 
-    recurse_variable(first_variable)
+    # Do not treat WrappedFunction itself as an ==0 constraint
+    if isinstance(first_variable_or_function, WrappedFunction):
+        deep_filter(filter_item, first_variable_or_function.arguments)
+    else:
+        deep_filter(filter_item, first_variable_or_function)
 
-    variable_indices = dict()
+    # slightly more efficient but duplicative code
+    # def recurse_constraint(c):
+    #     if c not in all_constraints:
+    #         all_constraints.add(c)
+    #         for a in c.arguments:
+    #             recurse_variable(a)
+    # def recurse_variable(a):
+    #     if is_iterable(a):
+    #         for v in a:
+    #             recurse_variable(v)
+    #     elif isinstance(a, Variable):
+    #         if a not in all_variables:
+    #             all_variables.add(a)
+    #             for c in a.constraints:
+    #                 recurse_constraint(c)
+    #     else:  # pragma: no cover
+    #         pass
+    # recurse_variable(first_variable)
+
+    if len(all_constraints) == 0:  # pragma: no cover
+        print("No constraints")
+        return
+    if len(all_variables) == 0:  # pragma: no cover
+        print("No variables")
+        return
+
+    variable_indices = {}
     cur_index = 0
     for v in all_variables:
         variable_indices[v] = cur_index
@@ -356,10 +401,11 @@ def solve_everything(first_variable: Variable):
         for c in all_constraints:
             args = c.arguments
             if verbose:
-                print(args)
+                print(f"Constraint {c} with arguments {args}")
             args_copy = _recursive_substitute(args, input_state, variable_indices)
             # r=c.function(*(input_state[variable_indices[v]] for v in c.arguments))
             r = c.function(*args_copy)
+            print(r)
             if is_iterable(r):
                 result += r
             else:
@@ -369,6 +415,7 @@ def solve_everything(first_variable: Variable):
         return jax_result
 
     fast_residual = jax.jit(all_constraints_function)
+
     # jac = jax.jacfwd(all_constraints_function)
     # fast_jac=jax.jit(jac)
     # TODO: diagnostic messages (e.g. if under or over constrained, if fails to converge).
@@ -382,15 +429,18 @@ def solve_everything(first_variable: Variable):
     # result_params, state = solver.run(params)
     result_params, _ = jit_solver(params)
 
+    if residuals_count < len(params):
+        if not solve_even_if_underconstrained:
+            print("Not solving underconstrained")
+            return
+        print(
+            f"Under constrained: {len(params)} degrees of freedom but only {residuals_count} constraints"
+        )
+
     for v in all_variables:
         # If we want to deal with jax.Array values
         # v.solution = result_params[variable_indices[v]]
         v.solution = float(result_params[variable_indices[v]])
-
-    if residuals_count < len(params):
-        print(
-            f"Under constrained: {len(params)} degrees of freedom but only {residuals_count} constraints"
-        )
 
     if residuals_count > len(params):
         print(

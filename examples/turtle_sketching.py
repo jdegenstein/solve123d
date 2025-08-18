@@ -29,6 +29,9 @@ import solve123d as cs
 from solve123d.turtle import *
 import ocp_vscode
 
+cs.set_verbose(True)
+cs.set_opportunistic(True)
+
 with Turtle() as t:
     pen_up()  # Disables appending of primitives (moves work the same)
     heading(270 + 25)
