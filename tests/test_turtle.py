@@ -41,18 +41,18 @@ class TurtleTest(unittest.TestCase):
                 t.simplify_equations = False
                 forward()
                 pen_up()
-                t.corner_radius = 1
+                t.turn_radius = 1
                 left(90)
                 forward()
                 t.x = 10
                 t.y = 10
-                t.corner_radius = 0
+                t.turn_radius = 0
                 right()  ## ends up turning it 180 degrees wrong way and walking backwards TODO: fix or output a warning when that happens
                 l = cs.var(1)
                 forward(l)
                 t.x = 20
                 t.y = 20
-                t.corner_radius = 2
+                t.turn_radius = 2
                 heading(
                     90
                 )  # this statement should throw because direction is variables
@@ -65,7 +65,7 @@ class TurtleTest(unittest.TestCase):
 
     def test_rounded_triangle(self):
         with Turtle() as t:
-            t.corner_radius = 1
+            t.turn_radius = 1
             l = cs.var(1)
             forward(l)
             left(120)
@@ -95,18 +95,18 @@ class TurtleTest(unittest.TestCase):
             pen_down()  # Start adding primitives, we start at the point that is 33-10 units away from the circle center.
             forward(10)
             # For coverage, does not fully verify left turn circles work
-            t.corner_radius = 1e-10
+            t.turn_radius = 1e-10
             left(90)
-            t.corner_radius = 0
+            t.turn_radius = 0
             self.assertTrue(cs.turtle.all_values(t.position))
             forward()  # Move forward an unknown distance (the constraint solver will solve for the distance that meets constraints)
             self.assertFalse(cs.turtle.all_values(t.position))
             # heading(90)
-            t.corner_radius = 1e-10
+            t.turn_radius = 1e-10
             heading(0, 1)
             # can also write t.x=
             t.x.magic = 33  # Constrain turtle's x coordinate to 33 (which resolves the unknown amount above)
-            t.corner_radius = 0
+            t.turn_radius = 0
             forward()  # Another unknown distance move
             heading(180 - 35)
             forward()  # and another
@@ -138,8 +138,8 @@ class TurtleTest(unittest.TestCase):
             heading(-40)
             forward()
             # Uppermost arc
-            t.corner_radius = (
-                13  # With corner_radius set to nonzero, all turns will add arcs
+            t.turn_radius = (
+                13  # With turn_radius set to nonzero, all turns will add arcs
             )
             heading(-90)  # Create the topmost arc
             t.x = 33 - 10  # Constrain x at the end of the arc
@@ -148,7 +148,7 @@ class TurtleTest(unittest.TestCase):
             l = forward()  # Remember the line created by this forward move
             t.x = 0
             t.y = 33
-            t.corner_radius = 0  # No more arcs, do sharp corners
+            t.turn_radius = 0  # No more arcs, do sharp corners
             heading(-90)
             forward()  # Unknown distance move at the "10" constraint in the sketch right above the hole
 
@@ -158,14 +158,14 @@ class TurtleTest(unittest.TestCase):
 
             heading(90 - 65)
             forward()
-            # t.corner_radius = 13  # Do the last two arcs
-            # Use parameter corner_radius instead
-            heading(-90, corner_radius=13)  # This adds 2nd arc from the bottom
+            # t.turn_radius = 13  # Do the last two arcs
+            # Use parameter turn_radius instead
+            heading(-90, turn_radius=13)  # This adds 2nd arc from the bottom
             t.x = 33 - 10  # Constraint needs to be done at the end of the arc
             forward()
-            heading(180 + 25, corner_radius=13)
+            heading(180 + 25, turn_radius=13)
             forward()
-            # t.corner_radius = 0  # Turn arcs off again
+            # t.turn_radius = 0  # Turn arcs off again
             close()  # Solve for the end point to match exactly the starting point
         line = t.to_build123d()
         face = build123d.make_face(line)

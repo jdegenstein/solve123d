@@ -62,7 +62,7 @@ with Turtle() as t:
     heading(-40)
     forward()
     # Uppermost arc
-    t.corner_radius = 13  # With corner_radius set to nonzero, all turns will add arcs
+    t.turn_radius = 13  # With turn_radius set to nonzero, all turns will add arcs
     heading(-90)  # Create the topmost arc
     t.x = 33 - 10  # Constrain x at the end of the arc
     forward()
@@ -70,7 +70,7 @@ with Turtle() as t:
     l = forward()  # Remember the line created by this forward move
     t.x = 0
     t.y = 33
-    t.corner_radius = 0  # No more arcs, do sharp corners
+    t.turn_radius = 0  # No more arcs, do sharp corners
     heading(-90)
     forward()  # Unknown distance move at the "10" constraint in the sketch right above the hole
 
@@ -80,13 +80,13 @@ with Turtle() as t:
 
     heading(90 - 65)
     forward()
-    t.corner_radius = 13  # Do the last two arcs
+    t.turn_radius = 13  # Do the last two arcs
     heading(-90)  # This adds 2nd arc from the bottom
     t.x = 33 - 10  # Constraint needs to be done at the end of the arc
     forward()
     heading(180 + 25)
     forward()
-    t.corner_radius = 0  # Turn arcs off again
+    t.turn_radius = 0  # Turn arcs off again
     close()  # Solve for the end point to match exactly the starting point
 
 line = t.to_build123d()

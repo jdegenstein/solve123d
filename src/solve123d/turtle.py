@@ -120,7 +120,7 @@ class Turtle:
         self.is_down = True
         self.heading_vector = (1, 0)
         self.position = (0, 0)
-        self.corner_radius = 0
+        self.turn_radius = 0
         self._use_stack = use_stack
         self.angle_scale = math.pi / 180.0
 
@@ -131,7 +131,7 @@ class Turtle:
             self.is_down = Turtle.top().is_down
             self.heading_vector = Turtle.top().heading_vector
             self.position = Turtle.top().position
-            self.corner_radius = Turtle.top().corner_radius
+            self.turn_radius = Turtle.top().turn_radius
         Turtle._turtle_stack.append(self)
         return self
 
@@ -158,11 +158,11 @@ class Turtle:
         self.position = new_pos
         return result
 
-    def left(self, angle, *, corner_radius=None) -> TArc:
+    def left(self, angle, *, turn_radius=None) -> TArc:
         """Turn the turtle left by angle
         Args:
             angle: Angle for the turn, scaled with self.angle_scale
-            corner_radius Overrides self.corner radius
+            turn_radius Overrides self.corner radius
         Returns:
             An arc (possibly zero-radius) which you can use in constraints
         """
@@ -170,15 +170,15 @@ class Turtle:
         s = cs.make_wrapper(jnp.sin)(self.angle_scale * angle)
         return self.change_heading_to(
             rotate(self.heading_vector, (c, s)),
-            corner_radius=corner_radius,
+            turn_radius=turn_radius,
             turn_dir=TurnDir.LEFT,
         )
 
-    def right(self, angle, *, corner_radius=None) -> TArc:
+    def right(self, angle, *, turn_radius=None) -> TArc:
         """Turn the turtle right by angle
         Args:
             angle: Angle for the turn, scaled with self.angle_scale
-            corner_radius Overrides self.corner radius
+            turn_radius Overrides self.corner radius
         Returns:
             An arc (possibly zero-radius) which you can use in constraints
         """
@@ -186,7 +186,7 @@ class Turtle:
         s = cs.make_wrapper(jnp.sin)(-self.angle_scale * angle)
         return self.change_heading_to(
             rotate(self.heading_vector, (c, s)),
-            corner_radius=corner_radius,
+            turn_radius=turn_radius,
             turn_dir=TurnDir.RIGHT,
         )
 
@@ -195,14 +195,14 @@ class Turtle:
         angle_or_x,
         y=None,
         *,
-        corner_radius=None,
+        turn_radius=None,
         turn_dir: TurnDir = TurnDir.AUTO,
     ) -> TArc:
         """Turn the turtle to point in a desired direction
         Args:
             angle_or_x: Angle for the turn, scaled with self.angle_scale, or a direction vector as a sequence, or x-component of direction
             y: y component of direction
-            corner_radius Overrides self.corner_radius
+            turn_radius Overrides self.turn_radius
             turn_dir Tells the turtle which way it should turn (which matters when corner radius is non zero)
         Returns:
             An arc (possibly zero-radius) which you can use in constraints
@@ -221,13 +221,13 @@ class Turtle:
                 c = cs.make_wrapper(jnp.cos)(self.angle_scale * angle_or_x)
                 s = cs.make_wrapper(jnp.sin)(self.angle_scale * angle_or_x)
                 return self.change_heading_to(
-                    (c, s), corner_radius=corner_radius, turn_dir=turn_dir
+                    (c, s), turn_radius=turn_radius, turn_dir=turn_dir
                 )
         else:
             scale = 1.0 / cs.make_wrapper(jnp.sqrt)(angle_or_x**2 + y**2)
             return self.change_heading_to(
                 (scale * angle_or_x, scale * y),
-                corner_radius=corner_radius,
+                turn_radius=turn_radius,
                 turn_dir=turn_dir,
             )
 
@@ -235,20 +235,20 @@ class Turtle:
         self,
         new_heading_vector,
         *,
-        corner_radius=None,
+        turn_radius=None,
         turn_dir: TurnDir = TurnDir.AUTO,
     ) -> TArc:
         """Turn the turtle to point in a desired direction
         Args:
             new_heading_vector: New direction that the turtle must point in. Must be unit-length.
-            corner_radius Overrides self.corner_radius
+            turn_radius Overrides self.turn_radius
             turn_dir Tells the turtle which way it should turn (which matters when corner radius is non zero).
         Returns:
             An arc (possibly zero-radius) which you can use in constraints
         Raises:
             Runtime error when turn_dir is not provided but is required due to potential dependence of turn direction on solver.
         """
-        r = corner_radius if corner_radius is not None else self.corner_radius
+        r = turn_radius if turn_radius is not None else self.turn_radius
         if isinstance(r, (cs.WrappedFunction, cs.Variable, jax.Array)) or r != 0:
             if turn_dir == TurnDir.AUTO:
                 if all_values(self.heading_vector, new_heading_vector):
@@ -271,7 +271,7 @@ class Turtle:
             if self.is_down:
                 self.primitive_list.append(result)
             self.position = new_point
-        else:  # corner_radius==0 , return zero radius arc for consistently
+        else:  # turn_radius==0 , return zero radius arc for consistently
             result = TArc(
                 self.position, self.heading_vector, self.position, self.position, r
             )
@@ -349,40 +349,40 @@ def forward(dist=None):
     return Turtle.top().forward(dist)
 
 
-def left(angle=None, *, corner_radius=None):
+def left(angle=None, *, turn_radius=None):
     """Turn the turtle left by angle
     Args:
         angle: Angle for the turn, scaled with self.angle_scale. If None, will create a variable you can constrain later.
-        corner_radius Overrides self.corner radius
+        turn_radius Overrides self.corner radius
     Returns:
         An arc (possibly zero-radius) which you can use in constraints
     """
     if angle is None:
         angle = cs.var(1.0 / Turtle.top().angle_scale)
-    return Turtle.top().left(angle, corner_radius=corner_radius)
+    return Turtle.top().left(angle, turn_radius=turn_radius)
 
 
-def right(angle=None, *, corner_radius=None):
+def right(angle=None, *, turn_radius=None):
     """Turn the turtle right by angle
     Args:
         angle: Angle for the turn, scaled with self.angle_scale. If None, will create a variable you can constrain later.
-        corner_radius Overrides self.corner radius
+        turn_radius Overrides self.corner radius
     Returns:
         An arc (possibly zero-radius) which you can use in constraints
     """
     if angle is None:
         angle = cs.var(1.0 / Turtle.top().angle_scale)
-    return Turtle.top().right(angle, corner_radius=corner_radius)
+    return Turtle.top().right(angle, turn_radius=turn_radius)
 
 
 def heading(
-    angle_or_x_or_dir, y=None, *, corner_radius=None, turn_dir: TurnDir = TurnDir.AUTO
+    angle_or_x_or_dir, y=None, *, turn_radius=None, turn_dir: TurnDir = TurnDir.AUTO
 ):
     """Turn the turtle to point in a desired direction
     Args:
         angle_or_x: Angle for the turn, scaled with self.angle_scale, or a direction vector as a sequence, or x-component of direction
         y: y component of direction
-        corner_radius Overrides self.corner_radius
+        turn_radius Overrides self.turn_radius
         turn_dir Tells the turtle which way it should turn (which matters when corner radius is non zero)
     Returns:
         An arc (possibly zero-radius) which you can use in constraints
@@ -390,7 +390,7 @@ def heading(
         Runtime error when turn_dir is not provided but is required due to potential dependence of turn direction on solver.
     """
     return Turtle.top().heading(
-        angle_or_x_or_dir, y, corner_radius=corner_radius, turn_dir=turn_dir
+        angle_or_x_or_dir, y, turn_radius=turn_radius, turn_dir=turn_dir
     )
 
 
