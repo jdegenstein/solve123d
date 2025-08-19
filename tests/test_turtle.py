@@ -28,6 +28,7 @@ import math
 import unittest
 import solve123d as cs
 from solve123d.turtle import *
+import build123d
 
 
 class TurtleTest(unittest.TestCase):
@@ -97,9 +98,9 @@ class TurtleTest(unittest.TestCase):
             t.corner_radius = 1e-10
             left(90)
             t.corner_radius = 0
-            self.assertTrue(all_values(t.position))
+            self.assertTrue(cs.turtle.all_values(t.position))
             forward()  # Move forward an unknown distance (the constraint solver will solve for the distance that meets constraints)
-            self.assertFalse(all_values(t.position))
+            self.assertFalse(cs.turtle.all_values(t.position))
             # heading(90)
             t.corner_radius = 1e-10
             heading(0, 1)
@@ -157,13 +158,14 @@ class TurtleTest(unittest.TestCase):
 
             heading(90 - 65)
             forward()
-            t.corner_radius = 13  # Do the last two arcs
-            heading(-90)  # This adds 2nd arc from the bottom
+            # t.corner_radius = 13  # Do the last two arcs
+            # Use parameter corner_radius instead
+            heading(-90, corner_radius=13)  # This adds 2nd arc from the bottom
             t.x = 33 - 10  # Constraint needs to be done at the end of the arc
             forward()
-            heading(180 + 25)
+            heading(180 + 25, corner_radius=13)
             forward()
-            t.corner_radius = 0  # Turn arcs off again
+            # t.corner_radius = 0  # Turn arcs off again
             close()  # Solve for the end point to match exactly the starting point
         line = t.to_build123d()
         face = build123d.make_face(line)
@@ -175,8 +177,10 @@ class TurtleTest(unittest.TestCase):
             msg="Note: the value was not independently calculated",
         )
 
-    def test_too_tall_toby(self):
+    def test_too_tall_toby_normal(self):
         self.too_tall_toby()
+
+    def test_too_tall_toby_opportunistic(self):
         cs.set_opportunistic(True)
         self.too_tall_toby()
         cs.set_opportunistic(False)

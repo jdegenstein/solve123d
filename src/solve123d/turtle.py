@@ -141,6 +141,12 @@ class Turtle:
         del Turtle._turtle_stack[-1]
 
     def forward(self, dist):
+        """Move the turtle forward by dist
+        Args:
+            dist: Distance to move by
+        Returns:
+            A line as a tuple of two points
+        """
         new_pos = (
             self.position[0] + self.heading_vector[0] * dist,
             self.position[1] + self.heading_vector[1] * dist,
@@ -152,43 +158,79 @@ class Turtle:
         self.position = new_pos
         return result
 
-    def left(self, angle) -> TArc:
+    def left(self, angle, *, corner_radius=None) -> TArc:
+        """Turn the turtle left by angle
+        Args:
+            angle: Angle for the turn, scaled with self.angle_scale
+            corner_radius Overrides self.corner radius
+        Returns:
+            An arc (possibly zero-radius) which you can use in constraints
+        """
         c = cs.make_wrapper(jnp.cos)(self.angle_scale * angle)
         s = cs.make_wrapper(jnp.sin)(self.angle_scale * angle)
         return self.change_heading_to(
-            rotate(self.heading_vector, (c, s)), turn_dir=TurnDir.LEFT
+            rotate(self.heading_vector, (c, s)), corner_radius=corner_radius, turn_dir=TurnDir.LEFT
         )
 
-    def right(self, angle) -> TArc:
+    def right(self, angle, *, corner_radius=None) -> TArc:
+        """Turn the turtle right by angle
+        Args:
+            angle: Angle for the turn, scaled with self.angle_scale
+            corner_radius Overrides self.corner radius
+        Returns:
+            An arc (possibly zero-radius) which you can use in constraints
+        """
         c = cs.make_wrapper(jnp.cos)(-self.angle_scale * angle)
         s = cs.make_wrapper(jnp.sin)(-self.angle_scale * angle)
         return self.change_heading_to(
-            rotate(self.heading_vector, (c, s)), turn_dir=TurnDir.RIGHT
+            rotate(self.heading_vector, (c, s)), corner_radius=corner_radius, turn_dir=TurnDir.RIGHT
         )
 
-    def heading(self, angle_or_x, y=None) -> TArc:
+    def heading(self, angle_or_x, y=None, *, corner_radius=None, turn_dir: TurnDir = TurnDir.AUTO) -> TArc:
+        """Turn the turtle to point in a desired direction
+        Args:
+            angle_or_x: Angle for the turn, scaled with self.angle_scale, or a direction vector as a sequence, or x-component of direction
+            y: y component of direction            
+            corner_radius Overrides self.corner_radius
+            turn_dir Tells the turtle which way it should turn (which matters when corner radius is non zero)
+        Returns:
+            An arc (possibly zero-radius) which you can use in constraints
+        Raises:
+            Runtime error when turn_dir is not provided but is required due to potential dependence of turn direction on solver.
+        """
         if y is None:
             if isinstance(angle_or_x, collections.abc.Sequence):
                 scale = 1.0 / cs.make_wrapper(jnp.sqrt)(
                     angle_or_x[0] ** 2 + angle_or_x[1] ** 2
                 )
                 return self.change_heading_to(
-                    (scale * angle_or_x[0], scale * angle_or_x[1])
+                    (scale * angle_or_x[0], scale * angle_or_x[1]), turn_dir=turn_dir
                 )
             else:
                 c = cs.make_wrapper(jnp.cos)(self.angle_scale * angle_or_x)
                 s = cs.make_wrapper(jnp.sin)(self.angle_scale * angle_or_x)
-                return self.change_heading_to((c, s))
+                return self.change_heading_to((c, s), corner_radius=corner_radius, turn_dir=turn_dir)
         else:
             scale = 1.0 / cs.make_wrapper(jnp.sqrt)(angle_or_x**2 + y**2)
-            return self.change_heading_to((scale * angle_or_x, scale * y))
+            return self.change_heading_to((scale * angle_or_x, scale * y), corner_radius=corner_radius, turn_dir=turn_dir)
 
     def change_heading_to(
-        self, new_heading_vector, turn_dir: TurnDir = TurnDir.AUTO
+        self, new_heading_vector, *, corner_radius=None, turn_dir: TurnDir = TurnDir.AUTO
     ) -> TArc:
+        """Turn the turtle to point in a desired direction
+        Args:
+            new_heading_vector: New direction that the turtle must point in. Must be unit-length.
+            corner_radius Overrides self.corner_radius
+            turn_dir Tells the turtle which way it should turn (which matters when corner radius is non zero).
+        Returns:
+            An arc (possibly zero-radius) which you can use in constraints
+        Raises:
+            Runtime error when turn_dir is not provided but is required due to potential dependence of turn direction on solver.
+        """
+        r=corner_radius if corner_radius is not None else self.corner_radius
         if (
-            isinstance(self.corner_radius, (cs.WrappedFunction, cs.Variable, jax.Array))
-            or self.corner_radius != 0
+            isinstance(r, (cs.WrappedFunction, cs.Variable, jax.Array))
+            or r != 0
         ):
             if turn_dir == TurnDir.AUTO:
                 if all_values(self.heading_vector, new_heading_vector):
@@ -199,12 +241,12 @@ class Turtle:
                         turn_dir = TurnDir.RIGHT
                 else:
                     raise RuntimeError(
-                        "Turn direction can not depend on solver variables. Please specify if ark needs to be left or right."
+                        "Arc turn direction can not depend on solver variables. Please use turn_dir parameter to specify if ark needs to be left or right."
                     )
             d = 1 if turn_dir == TurnDir.LEFT else -1
-            center_offset = rotate(self.heading_vector, (0, d * self.corner_radius))
+            center_offset = rotate(self.heading_vector, (0, d * r))
             center = add(self.position, center_offset)
-            center_offset_new = rotate(new_heading_vector, (0, d * self.corner_radius))
+            center_offset_new = rotate(new_heading_vector, (0, d * r))
             new_point = sub(center, center_offset_new)
 
             result = TArc(
@@ -212,7 +254,7 @@ class Turtle:
                 self.heading_vector,
                 new_point,
                 center,
-                self.corner_radius,
+                r
             )
             if self.is_down:
                 self.primitive_list.append(result)
@@ -223,16 +265,18 @@ class Turtle:
                 self.heading_vector,
                 self.position,
                 self.position,
-                self.corner_radius,
+                r
             )
         self.heading_vector = new_heading_vector
         return result
 
     def close(self):
+        """Close the sketch by constraining the current point to the start point when the pen was first down"""
         cs.magic.zero = self.position[0] - self.point_list[0][0]
         cs.magic.zero = self.position[1] - self.point_list[0][1]
 
     def to_build123d(self):
+        """Convert to a build123d line"""
         with build123d.BuildLine() as l:
             for p in self.primitive_list:
                 if isinstance(p, Line):
@@ -246,18 +290,21 @@ class Turtle:
                         tangent=cs.unjax(cs.solve(p.tangent_at_start)),
                     )
                 else:  # pragma: no cover
-                    raise RuntimeError("unsupported primitive for build123d")
+                    raise RuntimeError("Unsupported primitive for build123d")
 
         return l.line
 
     def pen_up(self):
+        """Disable appending primitives to primitive list"""
         self.is_down = False
 
     def pen_down(self):
+        """Enable appending primitives to primitive list"""
         self.is_down = True
 
     @property
     def x(self):
+        """Magical property, use .x=[some expression] to create a constraint on the x coordinate"""
         return self.position[0]
 
     @x.setter
@@ -270,6 +317,7 @@ class Turtle:
 
     @property
     def y(self):
+        """Magical property, use .y=[some expression] to create a constraint on the y coordinate"""
         return self.position[1]
 
     @y.setter
@@ -282,34 +330,70 @@ class Turtle:
 
 
 def forward(dist=None):
+    """Move the turtle forward by dist
+    Args:
+        dist: Distance to move by. If None, will create a variable you can constrain later.
+    Returns:
+        A line as a tuple of two points
+    """
     if dist is None:
         dist = cs.var(1)
     return Turtle.top().forward(dist)
 
 
-def left(angle=None):
+def left(angle=None, *, corner_radius=None):
+    """Turn the turtle left by angle
+    Args:
+        angle: Angle for the turn, scaled with self.angle_scale. If None, will create a variable you can constrain later.
+        corner_radius Overrides self.corner radius
+    Returns:
+        An arc (possibly zero-radius) which you can use in constraints
+    """
     if angle is None:
         angle = cs.var(1.0 / Turtle.top().angle_scale)
-    return Turtle.top().left(angle)
+    return Turtle.top().left(angle, corner_radius=corner_radius)
 
 
-def right(angle=None):
+def right(angle=None, *, corner_radius=None):
+    """Turn the turtle right by angle
+    Args:
+        angle: Angle for the turn, scaled with self.angle_scale. If None, will create a variable you can constrain later.
+        corner_radius Overrides self.corner radius
+    Returns:
+        An arc (possibly zero-radius) which you can use in constraints
+    """
     if angle is None:
         angle = cs.var(1.0 / Turtle.top().angle_scale)
-    return Turtle.top().right(angle)
+    return Turtle.top().right(angle, corner_radius=corner_radius)
 
 
-def heading(angle_or_x_or_dir, y=None):
-    return Turtle.top().heading(angle_or_x_or_dir, y)
+def heading(angle_or_x_or_dir, y=None, *, corner_radius=None, turn_dir: TurnDir = TurnDir.AUTO):
+    """Turn the turtle to point in a desired direction
+    Args:
+        angle_or_x: Angle for the turn, scaled with self.angle_scale, or a direction vector as a sequence, or x-component of direction
+        y: y component of direction            
+        corner_radius Overrides self.corner_radius
+        turn_dir Tells the turtle which way it should turn (which matters when corner radius is non zero)
+    Returns:
+        An arc (possibly zero-radius) which you can use in constraints
+    Raises:
+        Runtime error when turn_dir is not provided but is required due to potential dependence of turn direction on solver.
+    """
+    return Turtle.top().heading(angle_or_x_or_dir, y, corner_radius=corner_radius, turn_dir=turn_dir)
 
 
 def close():
+    """Close the sketch by constraining the current point to the start point when the pen was first down"""
     Turtle.top().close()
 
 
 def pen_down():
+    """Enable appending primitives to primitive list"""
     Turtle.top().pen_down()
 
 
 def pen_up():
+    """Disable appending primitives to primitive list"""
     Turtle.top().pen_up()
+
+__all__=["Turtle", "forward", "left", "right", "heading", "close", "pen_down", "pen_up"]
