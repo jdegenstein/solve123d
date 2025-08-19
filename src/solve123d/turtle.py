@@ -169,7 +169,9 @@ class Turtle:
         c = cs.make_wrapper(jnp.cos)(self.angle_scale * angle)
         s = cs.make_wrapper(jnp.sin)(self.angle_scale * angle)
         return self.change_heading_to(
-            rotate(self.heading_vector, (c, s)), corner_radius=corner_radius, turn_dir=TurnDir.LEFT
+            rotate(self.heading_vector, (c, s)),
+            corner_radius=corner_radius,
+            turn_dir=TurnDir.LEFT,
         )
 
     def right(self, angle, *, corner_radius=None) -> TArc:
@@ -183,14 +185,23 @@ class Turtle:
         c = cs.make_wrapper(jnp.cos)(-self.angle_scale * angle)
         s = cs.make_wrapper(jnp.sin)(-self.angle_scale * angle)
         return self.change_heading_to(
-            rotate(self.heading_vector, (c, s)), corner_radius=corner_radius, turn_dir=TurnDir.RIGHT
+            rotate(self.heading_vector, (c, s)),
+            corner_radius=corner_radius,
+            turn_dir=TurnDir.RIGHT,
         )
 
-    def heading(self, angle_or_x, y=None, *, corner_radius=None, turn_dir: TurnDir = TurnDir.AUTO) -> TArc:
+    def heading(
+        self,
+        angle_or_x,
+        y=None,
+        *,
+        corner_radius=None,
+        turn_dir: TurnDir = TurnDir.AUTO,
+    ) -> TArc:
         """Turn the turtle to point in a desired direction
         Args:
             angle_or_x: Angle for the turn, scaled with self.angle_scale, or a direction vector as a sequence, or x-component of direction
-            y: y component of direction            
+            y: y component of direction
             corner_radius Overrides self.corner_radius
             turn_dir Tells the turtle which way it should turn (which matters when corner radius is non zero)
         Returns:
@@ -209,13 +220,23 @@ class Turtle:
             else:
                 c = cs.make_wrapper(jnp.cos)(self.angle_scale * angle_or_x)
                 s = cs.make_wrapper(jnp.sin)(self.angle_scale * angle_or_x)
-                return self.change_heading_to((c, s), corner_radius=corner_radius, turn_dir=turn_dir)
+                return self.change_heading_to(
+                    (c, s), corner_radius=corner_radius, turn_dir=turn_dir
+                )
         else:
             scale = 1.0 / cs.make_wrapper(jnp.sqrt)(angle_or_x**2 + y**2)
-            return self.change_heading_to((scale * angle_or_x, scale * y), corner_radius=corner_radius, turn_dir=turn_dir)
+            return self.change_heading_to(
+                (scale * angle_or_x, scale * y),
+                corner_radius=corner_radius,
+                turn_dir=turn_dir,
+            )
 
     def change_heading_to(
-        self, new_heading_vector, *, corner_radius=None, turn_dir: TurnDir = TurnDir.AUTO
+        self,
+        new_heading_vector,
+        *,
+        corner_radius=None,
+        turn_dir: TurnDir = TurnDir.AUTO,
     ) -> TArc:
         """Turn the turtle to point in a desired direction
         Args:
@@ -227,11 +248,8 @@ class Turtle:
         Raises:
             Runtime error when turn_dir is not provided but is required due to potential dependence of turn direction on solver.
         """
-        r=corner_radius if corner_radius is not None else self.corner_radius
-        if (
-            isinstance(r, (cs.WrappedFunction, cs.Variable, jax.Array))
-            or r != 0
-        ):
+        r = corner_radius if corner_radius is not None else self.corner_radius
+        if isinstance(r, (cs.WrappedFunction, cs.Variable, jax.Array)) or r != 0:
             if turn_dir == TurnDir.AUTO:
                 if all_values(self.heading_vector, new_heading_vector):
                     delta = rotate(new_heading_vector, conjugate(self.heading_vector))
@@ -249,23 +267,13 @@ class Turtle:
             center_offset_new = rotate(new_heading_vector, (0, d * r))
             new_point = sub(center, center_offset_new)
 
-            result = TArc(
-                self.position,
-                self.heading_vector,
-                new_point,
-                center,
-                r
-            )
+            result = TArc(self.position, self.heading_vector, new_point, center, r)
             if self.is_down:
                 self.primitive_list.append(result)
             self.position = new_point
         else:  # corner_radius==0 , return zero radius arc for consistently
             result = TArc(
-                self.position,
-                self.heading_vector,
-                self.position,
-                self.position,
-                r
+                self.position, self.heading_vector, self.position, self.position, r
             )
         self.heading_vector = new_heading_vector
         return result
@@ -367,11 +375,13 @@ def right(angle=None, *, corner_radius=None):
     return Turtle.top().right(angle, corner_radius=corner_radius)
 
 
-def heading(angle_or_x_or_dir, y=None, *, corner_radius=None, turn_dir: TurnDir = TurnDir.AUTO):
+def heading(
+    angle_or_x_or_dir, y=None, *, corner_radius=None, turn_dir: TurnDir = TurnDir.AUTO
+):
     """Turn the turtle to point in a desired direction
     Args:
         angle_or_x: Angle for the turn, scaled with self.angle_scale, or a direction vector as a sequence, or x-component of direction
-        y: y component of direction            
+        y: y component of direction
         corner_radius Overrides self.corner_radius
         turn_dir Tells the turtle which way it should turn (which matters when corner radius is non zero)
     Returns:
@@ -379,7 +389,9 @@ def heading(angle_or_x_or_dir, y=None, *, corner_radius=None, turn_dir: TurnDir 
     Raises:
         Runtime error when turn_dir is not provided but is required due to potential dependence of turn direction on solver.
     """
-    return Turtle.top().heading(angle_or_x_or_dir, y, corner_radius=corner_radius, turn_dir=turn_dir)
+    return Turtle.top().heading(
+        angle_or_x_or_dir, y, corner_radius=corner_radius, turn_dir=turn_dir
+    )
 
 
 def close():
@@ -396,4 +408,14 @@ def pen_up():
     """Disable appending primitives to primitive list"""
     Turtle.top().pen_up()
 
-__all__=["Turtle", "forward", "left", "right", "heading", "close", "pen_down", "pen_up"]
+
+__all__ = [
+    "Turtle",
+    "forward",
+    "left",
+    "right",
+    "heading",
+    "close",
+    "pen_down",
+    "pen_up",
+]
