@@ -33,7 +33,7 @@ You can make build123d sketches using something similar to turtle graphics, but 
 
 For example:
 
-```
+```py
 with Turtle() as t:
     pen_up()  # Disables appending of primitives (moves work the same)
     heading(270 + 25)
@@ -60,7 +60,7 @@ line = t.to_build123d()
 
 You can use arbitrary equations as constraints, with syntax such as:
 
-```
+```py
 (t.x*t.y).magic=5
 ```
 
