@@ -42,6 +42,7 @@ run:
 pages:
   script:
     - pip install sphinx sphinx-rtd-theme
+    - pip install --editable ".[test]"
     - cd docs
     - make html
     - mv build/html/ ../public/
