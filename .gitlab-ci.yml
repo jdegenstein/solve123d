@@ -45,7 +45,7 @@ pages:
     - pip install --editable ".[docs]"
     - cd docs
     - make html
-    - mv build/html/ ../public/
+    - mv _build/html/ ../public/
   artifacts:
     paths:
       - public
