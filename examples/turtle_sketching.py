@@ -27,6 +27,7 @@ license:
 import math
 import solve123d as cs
 from solve123d.turtle import *
+import build123d
 import ocp_vscode
 
 cs.set_verbose(True)
@@ -87,7 +88,7 @@ with Turtle() as t:
     heading(180 + 25)
     forward()
     t.turn_radius = 0  # Turn arcs off again
-    close()  # Solve for the end point to match exactly the starting point
+    closing_constraint()  # Solve for the end point to match exactly the starting point
 
 line = t.to_build123d()
 face = build123d.make_face(line)

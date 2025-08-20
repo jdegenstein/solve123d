@@ -123,6 +123,8 @@ class Turtle:
         self.turn_radius = 0
         self._use_stack = use_stack
         self.angle_scale = math.pi / 180.0
+        self.first_position = None
+        self.first_heading_vector = None
 
     def __enter__(self):
         print("Turtle start")
@@ -154,6 +156,9 @@ class Turtle:
         if self.is_down:
             self.point_list.append(self.position)
             self.primitive_list.append(Line(self.position, new_pos))
+            if self.first_heading_vector is None:
+                self.first_heading_vector = self.heading_vector
+                self.first_position = self.position
         result = (self.position, new_pos)
         self.position = new_pos
         return result
@@ -270,6 +275,9 @@ class Turtle:
             result = TArc(self.position, self.heading_vector, new_point, center, r)
             if self.is_down:
                 self.primitive_list.append(result)
+                if self.first_heading_vector is None:
+                    self.first_heading_vector = self.heading_vector
+                    self.first_position = self.position
             self.position = new_point
         else:  # turn_radius==0 , return zero radius arc for consistently
             result = TArc(
@@ -278,10 +286,16 @@ class Turtle:
         self.heading_vector = new_heading_vector
         return result
 
-    def close(self):
+    def closing_constraint(self, tangency=False):
         """Close the sketch by constraining the current point to the start point when the pen was first down"""
-        cs.magic.zero = self.position[0] - self.point_list[0][0]
-        cs.magic.zero = self.position[1] - self.point_list[0][1]
+        cs.magic.zero = self.position[0] - self.first_position[0]
+        cs.magic.zero = self.position[1] - self.first_position[1]
+        # Tangency (if free enough)
+        if tangency:
+            if not all_values(self.heading_vector[0], self.first_heading_vector[0]):
+                cs.magic.zero = self.heading_vector[0] - self.first_heading_vector[0]
+            if not all_values(self.heading_vector[1], self.first_heading_vector[1]):
+                cs.magic.zero = self.heading_vector[1] - self.first_heading_vector[1]
 
     def to_build123d(self):
         """Convert to a build123d line"""
@@ -394,9 +408,9 @@ def heading(
     )
 
 
-def close():
+def closing_constraint(tangency=False):
     """Close the sketch by constraining the current point to the start point when the pen was first down"""
-    Turtle.top().close()
+    Turtle.top().closing_constraint(tangency)
 
 
 def pen_down():
@@ -415,7 +429,7 @@ __all__ = [
     "left",
     "right",
     "heading",
-    "close",
+    "closing_constraint",
     "pen_down",
     "pen_up",
 ]

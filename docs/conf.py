@@ -125,4 +125,4 @@ hoverxref_domains = [
     "py",
 ]
 
-#html_logo = "assets/build123d_logo/logo.svg"
+# html_logo = "assets/build123d_logo/logo.svg"
