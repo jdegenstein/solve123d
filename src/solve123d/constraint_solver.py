@@ -333,6 +333,7 @@ def solve_everything(
     """Solves all constraints and variables associated with the provided argument.
     :param first_variable: the variable to use as starting point for traversal.
     """
+    use_jit = True
     if verbose:
         print("Constraint solver invoked")
     all_variables = set()
@@ -414,20 +415,22 @@ def solve_everything(
         jax_result = jnp.array(result)
         return jax_result
 
-    fast_residual = jax.jit(all_constraints_function)
-
-    # jac = jax.jacfwd(all_constraints_function)
-    # fast_jac=jax.jit(jac)
-    # TODO: diagnostic messages (e.g. if under or over constrained, if fails to converge).
-    # solver = jaxopt.LevenbergMarquardt(residual_fun=all_constraints_function)
-    solver = jaxopt.LevenbergMarquardt(
-        residual_fun=fast_residual, maxiter=30, tol=1e-15, gtol=1e-15
-    )
-
-    jit_solver = jax.jit(solver.run)
-
-    # result_params, state = solver.run(params)
-    result_params, _ = jit_solver(params)
+    if use_jit:
+        fast_residual = jax.jit(all_constraints_function)
+        # jac = jax.jacfwd(all_constraints_function)
+        # fast_jac=jax.jit(jac)
+        # TODO: diagnostic messages (e.g. if under or over constrained, if fails to converge).
+        # solver = jaxopt.LevenbergMarquardt(residual_fun=all_constraints_function)
+        solver = jaxopt.LevenbergMarquardt(
+            residual_fun=fast_residual, maxiter=30, tol=1e-15, gtol=1e-15
+        )
+        jit_solver = jax.jit(solver.run)
+        result_params, _ = jit_solver(params)
+    else:  # pragma: no cover
+        solver = jaxopt.LevenbergMarquardt(
+            residual_fun=all_constraints_function, maxiter=30, tol=1e-15, gtol=1e-15
+        )
+        result_params, _ = solver.run(params)
 
     if residuals_count < len(params):
         if not solve_even_if_underconstrained:
