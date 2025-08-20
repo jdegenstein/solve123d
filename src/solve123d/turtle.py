@@ -287,15 +287,27 @@ class Turtle:
         return result
 
     def closing_constraint(self, tangency=False):
-        """Close the sketch by constraining the current point to the start point when the pen was first down"""
-        cs.magic.zero = self.position[0] - self.first_position[0]
-        cs.magic.zero = self.position[1] - self.first_position[1]
+        """Close the sketch by constraining the current point to the start point when the pen was first down
+        Args:
+            tangency: Whether to constrain tangency
+        """
+        applied_constraint=False
+        if not all_values(self.position[0], self.first_position[0]):
+            cs.magic.zero = self.position[0] - self.first_position[0]
+            applied_constraint=True
+        if not all_values(self.position[1], self.first_position[1]):
+            cs.magic.zero = self.position[1] - self.first_position[1]
+            applied_constraint=True
         # Tangency (if free enough)
         if tangency:
             if not all_values(self.heading_vector[0], self.first_heading_vector[0]):
                 cs.magic.zero = self.heading_vector[0] - self.first_heading_vector[0]
+                applied_constraint=True
             if not all_values(self.heading_vector[1], self.first_heading_vector[1]):
                 cs.magic.zero = self.heading_vector[1] - self.first_heading_vector[1]
+                applied_constraint=True
+        if not applied_constraint:
+            print("Turtle warning: closing_constraint() does nothing (starting and ending points are constrained)")
 
     def to_build123d(self):
         """Convert to a build123d line"""
