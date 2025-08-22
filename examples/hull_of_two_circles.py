@@ -39,6 +39,7 @@ r1 = 10
 r2 = 5
 h = 20
 with Turtle() as t:
+    t.simplify_equations = False
     pen_up()
     # we don't know where the bottom arc starts, but we know it's somewhere around -r1,0
     # so we provide initial guess of -180 degrees here
@@ -52,15 +53,21 @@ with Turtle() as t:
     pen_down()
     # Likewise, initial guess of 180 for the arc angle
     left(var(180), turn_radius=r1)
-    forward(var(h))
-    arc2_c = left(var(180), turn_radius=r2).center
+    forward(cs.absvar(h))
+    arc2_c = left(var(1), turn_radius=r2).center
     arc2_c[0].magic = 0
     arc2_c[1].magic = h
-    forward()
+    forward(cs.absvar(1.54321))
     closing_constraint(tangency=True)
-line = t.to_build123d()
-face = build123d.make_face(line)
-a = face.area
-print(a)
+t.debug_print_solution()
+
 # face = build123d.make_face(line)
-ocp_vscode.show(line)
+ref_circle_1 = build123d.Circle(r1)
+ref_circle_2 = build123d.Pos(0, h) * build123d.Circle(r2)
+ref_circle_1.color = "green"
+ref_circle_2.color = "green"
+line = t.to_build123d()
+ocp_vscode.show(line, ref_circle_1, ref_circle_2)
+# face = build123d.make_face(line)
+# a = face.area
+# print(a)

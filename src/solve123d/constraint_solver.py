@@ -121,6 +121,19 @@ def var(*a):
     return deep_filter(Variable, *a)
 
 
+def get_initial_value(*a):
+    def f(b):
+        if isinstance(b, Variable):
+            return b.initial_value
+        return b
+
+    return deep_filter(f, *a)
+
+
+def absvar(*a):
+    return deep_filter(lambda p: make_wrapper(jnp.abs)(Variable(p)), *a)
+
+
 def unjax(*a):
     def f(a):
         if isinstance(a, jax.Array) and a.size == 1:
@@ -253,6 +266,11 @@ class WrappedFunction:
     @magic.setter
     def magic(self, v):
         (self - v).make_zero()
+
+    @property
+    def initial_value(self):
+        """Computes the function on initial values of variables passed to it"""
+        return self.function(*get_initial_value(self.arguments))
 
     # arguments is a list of variables that are parameters to the function
     def __init__(self, function_or_variable, arguments=None):
@@ -425,7 +443,9 @@ def solve_everything(
             residual_fun=fast_residual, maxiter=30, tol=1e-15, gtol=1e-15
         )
         jit_solver = jax.jit(solver.run)
-        result_params, _ = jit_solver(params)
+        result_params, state = jit_solver(params)
+        residuals = fast_residual(result_params)
+        print(f"Residuals: {residuals}")
     else:  # pragma: no cover
         solver = jaxopt.LevenbergMarquardt(
             residual_fun=all_constraints_function, maxiter=30, tol=1e-15, gtol=1e-15

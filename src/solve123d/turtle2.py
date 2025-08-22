@@ -5,7 +5,7 @@ name: turtle.py
 by:   Dmytry Lavrov
 date: August 2025
 desc:
-    A turtle-graphics-meets-constraints builder for code cad.
+    Experimental copy of turtle-graphics-meets-constraints builder for code cad, intended for comparisons with turtle.py
 license:
 
     Copyright 2025 Dmytry Lavrov
@@ -130,6 +130,7 @@ def decoupled_cos(v):
 
 
 def solver_sincos(a):
+    # return decoupled_sin(a), decoupled_cos(a)
     return wrapped_sin(a), wrapped_cos(a)
 
 
@@ -433,7 +434,7 @@ def left(angle=None, *, turn_radius=None):
         An arc (possibly zero-radius) which you can use in constraints
     """
     if angle is None:
-        angle = cs.var(0.99 * math.pi / Turtle.top().angle_scale)
+        angle = cs.var(math.pi / Turtle.top().angle_scale)
     return Turtle.top().left(angle, turn_radius=turn_radius)
 
 
@@ -446,7 +447,7 @@ def right(angle=None, *, turn_radius=None):
         An arc (possibly zero-radius) which you can use in constraints
     """
     if angle is None:
-        angle = cs.var(0.99 * math.pi / Turtle.top().angle_scale)
+        angle = cs.var(math.pi / Turtle.top().angle_scale)
     return Turtle.top().right(angle, turn_radius=turn_radius)
 
 

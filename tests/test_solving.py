@@ -118,6 +118,12 @@ class SolvingTest(unittest.TestCase):
         cs.magic.zero = 2.0 - a * 3.0 + b
         (a - b * 2.0).magic = -1
 
+        self.assertEqual(
+            (2.0 - a * 3.0 + b).initial_value,
+            2.0 - a.initial_value * 3.0 + b.initial_value,
+        )
+        self.assertEqual(cs.get_initial_value(2.0, a), (2.0, a.initial_value))
+
         test = cs.solve((2.0 - a * 3.0 + b).magic, a - b * 2.0 + 1.0)
 
         # self.assertTrue(isinstance(test[0], float))
