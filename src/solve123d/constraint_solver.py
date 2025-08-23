@@ -123,7 +123,7 @@ def var(*a):
 
 def get_initial_value(*a):
     def f(b):
-        if isinstance(b, Variable):
+        if isinstance(b, (Variable, WrappedFunction)):
             return b.initial_value
         return b
 
@@ -180,6 +180,8 @@ def solve(*a):
 #     else:
 #         return a
 
+# TODO: improve results_cache implementation
+_results_cache={}
 
 def make_wrapper(f):
     """
@@ -198,8 +200,11 @@ def make_wrapper(f):
             def arg_unflatten_filter(a):
                 nonlocal args_of_solver_invocation, args_of_first_invocation
                 if isinstance(a, WrappedFunction):
-                    # result = a.function(*args_of_solver_invocation[indices[index]])
-                    result = a.function(*(arg_unflatten_filter(b) for b in a.arguments))
+                    if a in _results_cache:
+                        result=_results_cache[a]
+                    else:
+                        result = a.function(*(arg_unflatten_filter(b) for b in a.arguments))
+                        _results_cache[a]=result
                 elif isinstance(a, Variable):
                     if a.solution is None:
                         # result = args_of_solver_invocation[indices[index]][0]
@@ -413,8 +418,10 @@ def solve_everything(
     residuals_count = 0
 
     # Make one function to solve, out of all known constraints
-    def all_constraints_function(input_state):
+    def all_constraints_function(input_state):        
         nonlocal residuals_count
+        global _results_cache
+        _results_cache={}
         # Todo: create jnp.array directly
         result = []
         for c in all_constraints:
@@ -431,6 +438,7 @@ def solve_everything(
                 result.append(r)
         residuals_count = len(result)
         jax_result = jnp.array(result)
+        _results_cache={}
         return jax_result
 
     if use_jit:
