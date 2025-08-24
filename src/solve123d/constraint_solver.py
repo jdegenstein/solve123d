@@ -42,7 +42,7 @@ class SolverError(Exception):
 
 
 class SolverSettings:
-    max_tolerance = 1e-7
+    max_tolerance = 1e-5
     verbose = False
 
     settings_metadata = {"max_tolerance": {"combine": min}}
@@ -54,7 +54,7 @@ class SolverSettings:
     def append_settings(self, other: "SolverSettings"):
         for k, v in other.__dict__.items():
             if k in self.__dict__:
-                if self.settings_metadata[v]:
+                if k in self.settings_metadata:
                     try:
                         self.__dict__[k] = self.settings_metadata[k]["combine"](
                             self.__dict__[k], v

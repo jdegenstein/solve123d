@@ -145,7 +145,8 @@ class SolvingTest(unittest.TestCase):
     def test_overconstrained(self):
         a = cs.Variable(1.2345)
         b = cs.var(1.2345)
-        a.settings = cs.SolverSettings(max_tolerance=1e10)
+        a.settings = cs.SolverSettings(max_tolerance=2e10)
+        b.settings = cs.SolverSettings(max_tolerance=1e10)
         cs.magic.zero = 2.0 - a * 3.0 + b
         cs.magic.zero = a - b * 2.0 + 1.0
         cs.magic.zero = a - b * 1.0 + 1.0
