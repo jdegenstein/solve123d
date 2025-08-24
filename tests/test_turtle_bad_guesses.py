@@ -86,6 +86,52 @@ class TurtleBadGuessTest(unittest.TestCase):
 
             ocp_vscode.show(line, face)
 
+    def test_almost_straight(self):
+        r = 1
+        with Turtle() as t:
+            forward(100)
+            left(turn_radius=r)
+            forward()
+            a1 = left(turn_radius=r)
+            a1.center[0].magic = 200
+            a1.center[1].magic = 2
+            forward()
+            closing_constraint()
+        t.debug_print_solution()
+        line = t.to_build123d()
+        face = build123d.make_face(line)
+        a = face.area
+        print(a)
+        self.assertAlmostEqual(a, 251.58704585025112)
+        if __name__ == "__main__":  # pragma: no cover
+            import ocp_vscode
+
+            ocp_vscode.show(line)
+
+    def test_almost_straight_bad_guess(self):
+        r = 1
+        with Turtle() as t:
+            forward(100)
+            bad_guess = cs.var(181)
+            bad_guess.name = "bad guess for angle"
+            left(bad_guess, turn_radius=r)
+            forward()
+            a1 = left(turn_radius=r)
+            a1.center[0].magic = 200
+            a1.center[1].magic = 2
+            forward()
+            closing_constraint()
+        t.debug_print_solution()
+        line = t.to_build123d()
+        face = build123d.make_face(line)
+        a = face.area
+        print(a)
+        self.assertAlmostEqual(a, 251.58704585025112)
+        if __name__ == "__main__":  # pragma: no cover
+            import ocp_vscode
+
+            ocp_vscode.show(line)
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

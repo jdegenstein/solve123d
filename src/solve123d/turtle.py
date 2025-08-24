@@ -111,6 +111,7 @@ def decouple_value(v):
     if isinstance(v, cs.Variable) and v.solution is not None:
         return v.solution
     result = cs.var(v.initial_value)
+    result.name = "decoupling variable"
     # result=cs.var(0)
     # TODO: figure out good value for the magic number here
     cs.magic.zero = v - result
@@ -440,7 +441,9 @@ def forward(
         A line as a tuple of two points
     """
     if dist is None:
-        dist = wrapped_abs(cs.var(1))
+        dist_non_abs = cs.var(1)
+        dist_non_abs.name = "forward dist"
+        dist = wrapped_abs(dist_non_abs)
     return Turtle.top().forward(dist)
 
 
@@ -454,6 +457,7 @@ def left(angle=None, *, turn_radius=None) -> TArc:
     """
     if angle is None:
         angle = cs.var(0.99 * math.pi / Turtle.top().angle_scale)
+        angle.name = "left angle"
     return Turtle.top().left(angle, turn_radius=turn_radius)
 
 
@@ -467,6 +471,7 @@ def right(angle=None, *, turn_radius=None) -> TArc:
     """
     if angle is None:
         angle = cs.var(0.99 * math.pi / Turtle.top().angle_scale)
+        angle.name = "right angle"
     return Turtle.top().right(angle, turn_radius=turn_radius)
 
 

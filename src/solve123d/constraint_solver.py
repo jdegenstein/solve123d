@@ -37,14 +37,43 @@ import jaxopt
 jax.config.update("jax_enable_x64", True)
 
 
-verbose = False
+class SolverError(Exception):
+    pass
+
+
+class SolverSettings:
+    max_tolerance = 1e-7
+    verbose = False
+
+    settings_metadata = {"max_tolerance": {"combine": min}}
+
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            self.__dict__[k] = v
+
+    def append_settings(self, other: "SolverSettings"):
+        for k, v in other.__dict__.items():
+            if k in self.__dict__:
+                if self.settings_metadata[v]:
+                    try:
+                        self.__dict__[k] = self.settings_metadata[k]["combine"](
+                            self.__dict__[k], v
+                        )
+                    except KeyError:
+                        pass
+            else:
+                self.__dict__[k] = v
+
+
+solver_settings = SolverSettings()
 
 
 def set_verbose(v=True):
-    global verbose
-    verbose = v
+    global solver_settings
+    solver_settings.verbose = v
 
 
+# Note: opportunistic is not a solver setting, but a constraints setting.
 opportunistic = False
 
 
@@ -71,7 +100,16 @@ def recursive_unpack(list_or_item):
         yield list_or_item
 
 
-class Variable:
+class SolverEntity:
+    settings = None
+    name = ""
+
+    def append_settings_to(self, s):
+        if self.settings:
+            s.append_settings(self.settings)
+
+
+class Variable(SolverEntity):
     """A value that the solver will solve for"""
 
     def __init__(self, initial_value=0.0):
@@ -103,6 +141,51 @@ class Variable:
         Returns the solution to the system of equations connected to the variable
         Runs solver on the first call (all other variables end up solved afterwards)"""
         return self.solve()
+
+
+class WrappedFunction(SolverEntity):
+    """Represents a function used as a geometric constraint"""
+
+    def make_zero(self):
+        """Creates a constraint that the wrapped function equates to zero"""
+        variables_to_solve = set()
+        for a in recursive_unpack(self.arguments):
+            if isinstance(a, Variable):
+                a.constraints.add(self)
+                variables_to_solve.add(a)
+            else:  # pragma: no cover
+                pass
+        if opportunistic:  # Attempt to solve as soon as possible
+            for a in variables_to_solve:
+                solve_everything(a, solve_even_if_underconstrained=False)
+        return self
+
+    @property
+    def magic(self):
+        return self
+
+    @magic.setter
+    def magic(self, v):
+        (self - v).make_zero()
+
+    @property
+    def initial_value(self):
+        """Computes the function on initial values of variables passed to it"""
+        return self.function(*get_initial_value(self.arguments))
+
+    # arguments is a list of variables that are parameters to the function
+    def __init__(self, function_or_variable, arguments=None):
+        # Trivial case of wrapping a Variable in a Function
+        if isinstance(function_or_variable, Variable):
+            self.arguments = [function_or_variable]
+
+            def passthrough(v):
+                return v
+
+            self.function = passthrough
+        else:
+            self.function = function_or_variable
+            self.arguments = arguments
 
 
 def deep_filter(f, *args):
@@ -183,11 +266,6 @@ def solve(*a):
 # TODO: improve results_cache implementation
 _results_cache = {}
 
-# TODO: improve results_cache implementation
-_results_cache = {}
-
-# TODO: improve results_cache implementation
-_results_cache={}
 
 def make_wrapper(f):
     """
@@ -255,51 +333,6 @@ def make_wrapper(f):
     return result
 
 
-class WrappedFunction:
-    """Represents a function used as a geometric constraint"""
-
-    def make_zero(self):
-        """Creates a constraint that the wrapped function equates to zero"""
-        variables_to_solve = set()
-        for a in recursive_unpack(self.arguments):
-            if isinstance(a, Variable):
-                a.constraints.add(self)
-                variables_to_solve.add(a)
-            else:  # pragma: no cover
-                pass
-        if opportunistic:  # Attempt to solve as soon as possible
-            for a in variables_to_solve:
-                solve_everything(a, solve_even_if_underconstrained=False)
-        return self
-
-    @property
-    def magic(self):
-        return self
-
-    @magic.setter
-    def magic(self, v):
-        (self - v).make_zero()
-
-    @property
-    def initial_value(self):
-        """Computes the function on initial values of variables passed to it"""
-        return self.function(*get_initial_value(self.arguments))
-
-    # arguments is a list of variables that are parameters to the function
-    def __init__(self, function_or_variable, arguments=None):
-        # Trivial case of wrapping a Variable in a Function
-        if isinstance(function_or_variable, Variable):
-            self.arguments = [function_or_variable]
-
-            def passthrough(v):
-                return v
-
-            self.function = passthrough
-        else:
-            self.function = function_or_variable
-            self.arguments = arguments
-
-
 def swap_args(f):
     """Higher order function that converts f(a,b) into f(b,a)"""
 
@@ -365,19 +398,23 @@ def solve_everything(
     :param first_variable: the variable to use as starting point for traversal.
     """
     use_jit = True
-    if verbose:
-        print("Constraint solver invoked")
+
     all_variables = set()
     all_constraints = set()
+
+    settings = SolverSettings()
+    settings.append_settings(solver_settings)
 
     def filter_item(a):
         if isinstance(a, Variable):
             if a.solution is None:
                 if a not in all_variables:
+                    a.append_settings_to(settings)
                     all_variables.add(a)
                     deep_filter(filter_item, *a.constraints)
         elif isinstance(a, WrappedFunction):
             if a not in all_constraints:
+                a.append_settings_to(settings)
                 all_constraints.add(a)
                 deep_filter(filter_item, a.arguments)
         else:  # pragma: no cover
@@ -388,6 +425,11 @@ def solve_everything(
         deep_filter(filter_item, first_variable_or_function.arguments)
     else:
         deep_filter(filter_item, first_variable_or_function)
+
+    verbose = settings.verbose
+
+    if verbose:
+        print("Constraint solver invoked")
 
     # slightly more efficient but duplicative code
     # def recurse_constraint(c):
@@ -426,7 +468,7 @@ def solve_everything(
     residuals_count = 0
 
     # Make one function to solve, out of all known constraints
-    def all_constraints_function(input_state):        
+    def all_constraints_function(input_state):
         nonlocal residuals_count
         global _results_cache
         _results_cache = {}
@@ -467,6 +509,7 @@ def solve_everything(
             residual_fun=all_constraints_function, maxiter=30, tol=1e-15, gtol=1e-15
         )
         result_params, _ = solver.run(params)
+        residuals = all_constraints_function(result_params)
 
     if residuals_count < len(params):
         if not solve_even_if_underconstrained:
@@ -480,6 +523,8 @@ def solve_everything(
         # If we want to deal with jax.Array values
         # v.solution = result_params[variable_indices[v]]
         v.solution = float(result_params[variable_indices[v]])
+        if verbose:
+            print(f"Var {v.name}: solution:{v.solution}")
 
     if residuals_count > len(params):
         print(
@@ -488,6 +533,18 @@ def solve_everything(
 
     if verbose:
         print(f"initial params = {params} , result_params={result_params}")
+
+    # Raise at the end so that all verbose prints complete
+    total_error = jnp.linalg.norm(residuals)
+    if settings.max_tolerance is not None:
+        if total_error > settings.max_tolerance:
+            error_message = (
+                f"Solver failed to converge with total error {total_error}. "
+            )
+            if residuals_count > len(params):
+                error_message += "The solver is over constrained."
+            error_message += " You may need to provide initial guesses and/or remove conflicting constraints."
+            raise SolverError(error_message)
     # print(fast_residual(params))
     # print(fast_jac(params))
 
