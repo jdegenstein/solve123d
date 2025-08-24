@@ -33,7 +33,7 @@ import jax.numpy as jnp
 import build123d
 import math
 
-type FloatLike = cs.Variable | cs.WrappedFunction | float
+type FloatLike = cs.Variable | cs.WrappedFunction | float | int
 
 
 class Primitive:

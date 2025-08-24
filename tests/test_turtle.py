@@ -79,9 +79,7 @@ class TurtleTest(unittest.TestCase):
                 t.x = 20
                 t.y = 20
                 t.turn_radius = 2
-                heading(
-                    90
-                )  # this statement should throw because direction is variables
+                heading(90)  # this statement should throw because direction is variable
 
         except RuntimeError:
             excepted = True
@@ -99,7 +97,25 @@ class TurtleTest(unittest.TestCase):
             forward(10)
             left(turn_radius=cs.var(1))
             closing_constraint()
+            teleport((1, 2))
+            self.assertEqual(t.x, 1)
+            self.assertEqual(t.y, 2)
 
+        line = t.to_build123d()
+        face = build123d.make_face(line)
+        a = face.area
+        self.assertAlmostEqual(a, math.pi * 5 * 5 / 2 + 10 * 10)
+
+    def test_closing_constraint_warning(self):
+        with Turtle() as t:
+            teleport(1, 1)
+            forward(10)
+            left(90)
+            forward(10)
+            left(90)
+            forward(10)
+            left(180, turn_radius=5)
+            closing_constraint(tangency=True)
         line = t.to_build123d()
         face = build123d.make_face(line)
         a = face.area
