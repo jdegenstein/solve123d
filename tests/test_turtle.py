@@ -89,6 +89,22 @@ class TurtleTest(unittest.TestCase):
         # TODO: fix backwards solution problem if possible, and remove abs here
         self.assertAlmostEqual(abs(cs.solve(l)), math.sqrt(2.0) * 10)
 
+    def test_teleport(self):
+        with Turtle() as t:
+            teleport(1, 1)
+            forward(10)
+            left(90)
+            forward(10)
+            left(90)
+            forward(10)
+            left(turn_radius=cs.var(1))
+            closing_constraint()
+
+        line = t.to_build123d()
+        face = build123d.make_face(line)
+        a = face.area
+        self.assertAlmostEqual(a, math.pi * 5 * 5 / 2 + 10 * 10)
+
     def test_rounded_triangle(self):
         with Turtle() as t:
             t.turn_radius = 1
@@ -106,7 +122,11 @@ class TurtleTest(unittest.TestCase):
         line = t.to_build123d()
         face = build123d.make_face(line)
         a = face.area
-        self.assertAlmostEqual(a, 76.44286284281172)
+        h = math.sqrt(0.75) * 10
+        triangle_area = 10 * h / 2
+        side_area = 3 * 10 * 1
+        circle_area = 1 * 1 * math.pi
+        self.assertAlmostEqual(a, triangle_area + side_area + circle_area)
         if __name__ == "__main__":  # pragma: no cover
             import ocp_vscode
 

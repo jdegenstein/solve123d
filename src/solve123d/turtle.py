@@ -33,6 +33,8 @@ import jax.numpy as jnp
 import build123d
 import math
 
+type FloatLike = cs.Variable | cs.WrappedFunction | float
+
 
 class Primitive:
     pass
@@ -142,7 +144,18 @@ class Turtle:
         Turtle._global_turtle = Turtle._turtle_stack[-1]
         del Turtle._turtle_stack[-1]
 
-    def forward(self, dist):
+    # Does not make a line
+    def teleport(self, x_or_pos, y=None):
+        """Moves turtle to a point without creating a constraint or drawing a line"""
+        if cs.is_iterable(x_or_pos):
+            assert y is None
+            self.position = x_or_pos
+        else:
+            self.position = (x_or_pos, y)
+
+    def forward(
+        self, dist
+    ) -> tuple[tuple[FloatLike, FloatLike], tuple[FloatLike, FloatLike]]:
         """Move the turtle forward by dist
         Args:
             dist: Distance to move by
@@ -291,23 +304,25 @@ class Turtle:
         Args:
             tangency: Whether to constrain tangency
         """
-        applied_constraint=False
+        applied_constraint = False
         if not all_values(self.position[0], self.first_position[0]):
             cs.magic.zero = self.position[0] - self.first_position[0]
-            applied_constraint=True
+            applied_constraint = True
         if not all_values(self.position[1], self.first_position[1]):
             cs.magic.zero = self.position[1] - self.first_position[1]
-            applied_constraint=True
+            applied_constraint = True
         # Tangency (if free enough)
         if tangency:
             if not all_values(self.heading_vector[0], self.first_heading_vector[0]):
                 cs.magic.zero = self.heading_vector[0] - self.first_heading_vector[0]
-                applied_constraint=True
+                applied_constraint = True
             if not all_values(self.heading_vector[1], self.first_heading_vector[1]):
                 cs.magic.zero = self.heading_vector[1] - self.first_heading_vector[1]
-                applied_constraint=True
+                applied_constraint = True
         if not applied_constraint:
-            print("Turtle warning: closing_constraint() does nothing (starting and ending points are constrained)")
+            print(
+                "Turtle warning: closing_constraint() does nothing (starting and ending points are constrained)"
+            )
 
     def to_build123d(self):
         """Convert to a build123d line"""
@@ -363,7 +378,14 @@ class Turtle:
             # self.position=(self.position[0], cs.solve(self.position[1]))
 
 
-def forward(dist=None):
+def teleport(x_or_pos, y=None):
+    """Moves turtle to a point without creating a constraint or drawing a line"""
+    Turtle.top().teleport(x_or_pos, y)
+
+
+def forward(
+    dist=None,
+) -> tuple[tuple[FloatLike, FloatLike], tuple[FloatLike, FloatLike]]:
     """Move the turtle forward by dist
     Args:
         dist: Distance to move by. If None, will create a variable you can constrain later.
@@ -375,7 +397,7 @@ def forward(dist=None):
     return Turtle.top().forward(dist)
 
 
-def left(angle=None, *, turn_radius=None):
+def left(angle=None, *, turn_radius=None) -> TArc:
     """Turn the turtle left by angle
     Args:
         angle: Angle for the turn, scaled with self.angle_scale. If None, will create a variable you can constrain later.
@@ -388,7 +410,7 @@ def left(angle=None, *, turn_radius=None):
     return Turtle.top().left(angle, turn_radius=turn_radius)
 
 
-def right(angle=None, *, turn_radius=None):
+def right(angle=None, *, turn_radius=None) -> TArc:
     """Turn the turtle right by angle
     Args:
         angle: Angle for the turn, scaled with self.angle_scale. If None, will create a variable you can constrain later.
@@ -403,7 +425,7 @@ def right(angle=None, *, turn_radius=None):
 
 def heading(
     angle_or_x_or_dir, y=None, *, turn_radius=None, turn_dir: TurnDir = TurnDir.AUTO
-):
+) -> TArc:
     """Turn the turtle to point in a desired direction
     Args:
         angle_or_x: Angle for the turn, scaled with self.angle_scale, or a direction vector as a sequence, or x-component of direction
@@ -437,6 +459,7 @@ def pen_up():
 
 __all__ = [
     "Turtle",
+    "teleport",
     "forward",
     "left",
     "right",
