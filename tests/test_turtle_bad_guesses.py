@@ -112,7 +112,7 @@ class TurtleBadGuessTest(unittest.TestCase):
         r = 1
         with Turtle() as t:
             forward(100)
-            bad_guess = cs.var(181)
+            bad_guess = cs.var(200)
             bad_guess.name = "bad guess for angle"
             left(bad_guess, turn_radius=r)
             forward()

@@ -143,7 +143,7 @@ class TurtleTest(unittest.TestCase):
             left(90)
             forward(10)
             left(180, turn_radius=5)
-            closing_constraint(tangency=True)
+            closing_constraint()
         line = t.to_build123d()
         face = build123d.make_face(line)
         a = face.area

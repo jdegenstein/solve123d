@@ -42,7 +42,7 @@ class SolverError(Exception):
 
 
 class SolverSettings:
-    max_tolerance = 1e-5
+    max_tolerance = 1e-7
     verbose = False
 
     settings_metadata = {"max_tolerance": {"combine": min}}

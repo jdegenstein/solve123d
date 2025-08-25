@@ -104,6 +104,13 @@ def all_values(*args):
     return True
 
 
+@cs.make_wrapper
+def parallel_metric(a, b):
+    sa = 1.0 / jnp.hypot(a[0], a[1])
+    sb = 1.0 / jnp.hypot(b[0], b[1])
+    return jnp.hypot(a[0] * sa - b[0] * sb, a[1] * sa - b[1] * sb)
+
+
 # Experimental attempt to add extra variables to allow it to hop across a circle. Does not work well.
 def decouple_value(v):
     if all_values(v):
@@ -207,10 +214,20 @@ class Turtle:
         Returns:
             A line as a tuple of two points
         """
-        new_pos = (
-            self.position[0] + self.heading_vector[0] * dist,
-            self.position[1] + self.heading_vector[1] * dist,
-        )
+        if all_values(self.heading_vector):
+            new_pos = (
+                self.position[0] + self.heading_vector[0] * dist,
+                self.position[1] + self.heading_vector[1] * dist,
+            )
+        else:
+            new_pos = cs.var(1.234, 0.23452345)
+            delta = sub(new_pos, self.position)
+            delta_len = cs.make_wrapper(jnp.hypot)(delta[0], delta[1])
+
+            parallel_metric(self.heading_vector, delta).make_zero()
+            # (self.heading_vector[0]-delta[0]/(delta_len+1E-50)).make_zero()
+            # (self.heading_vector[1]-delta[1]/(delta_len+1E-50)).make_zero()
+            (delta_len - dist).make_zero()
         if self.is_down:
             self.point_list.append(self.position)
             self.primitive_list.append(Line(self.position, new_pos))
@@ -357,12 +374,7 @@ class Turtle:
             applied_constraint = True
         # Tangency (if free enough)
         if tangency:
-            if not all_values(self.heading_vector[0], self.first_heading_vector[0]):
-                cs.magic.zero = self.heading_vector[0] - self.first_heading_vector[0]
-                applied_constraint = True
-            if not all_values(self.heading_vector[1], self.first_heading_vector[1]):
-                cs.magic.zero = self.heading_vector[1] - self.first_heading_vector[1]
-                applied_constraint = True
+            parallel_metric(self.heading_vector, self.first_heading_vector).make_zero()
         if not applied_constraint:
             print(
                 "Turtle warning: closing_constraint() does nothing (starting and ending points are constrained)"
@@ -457,7 +469,7 @@ def left(angle=None, *, turn_radius=None) -> TArc:
     """
     if angle is None:
         angle = cs.var(0.99 * math.pi / Turtle.top().angle_scale)
-        angle.name = "left angle"
+        angle.name = "left turn angle"
     return Turtle.top().left(angle, turn_radius=turn_radius)
 
 
@@ -471,7 +483,7 @@ def right(angle=None, *, turn_radius=None) -> TArc:
     """
     if angle is None:
         angle = cs.var(0.99 * math.pi / Turtle.top().angle_scale)
-        angle.name = "right angle"
+        angle.name = "right turn angle"
     return Turtle.top().right(angle, turn_radius=turn_radius)
 
 
