@@ -68,8 +68,7 @@ class TurtleBadGuessTest(unittest.TestCase):
             t.turn_radius = 1
             l = cs.var(1)
             forward(l)
-            left(120)
-            t.primitive_list[-1].center[0].magic = 10
+            left(120).center[0].magic = 10
             l2 = wrapped_abs(cs.var(1))
             forward(l2)
             left(cs.var(340))

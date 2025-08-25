@@ -146,6 +146,8 @@ class Variable(SolverEntity):
 class WrappedFunction(SolverEntity):
     """Represents a function used as a geometric constraint"""
 
+    cached_initial_value = None
+
     def make_zero(self):
         """Creates a constraint that the wrapped function equates to zero"""
         variables_to_solve = set()
@@ -171,7 +173,11 @@ class WrappedFunction(SolverEntity):
     @property
     def initial_value(self):
         """Computes the function on initial values of variables passed to it"""
-        return self.function(*get_initial_value(self.arguments))
+        if self.cached_initial_value is None:
+            self.cached_initial_value = self.function(
+                *get_initial_value(self.arguments)
+            )
+        return self.cached_initial_value
 
     # arguments is a list of variables that are parameters to the function
     def __init__(self, function_or_variable, arguments=None):
@@ -390,6 +396,61 @@ def _recursive_substitute(args, state, indices):
     return deep_filter(f, args)
 
 
+class _SimpleFunctionCache:
+    def __init__(self, f):
+        self.f = f
+        self.cached_for = None
+        self.cached_result = None
+
+    def __call__(self, a):
+        if a is not self.cached_for:
+            self.cached_result = self.f(a)
+            self.cached_for = a
+        return self.cached_result
+
+
+class SimpleSolver:
+    def __init__(self, residual_f, jacobian_f, tolerance, max_iter=100):
+        self.residual_f = _SimpleFunctionCache(residual_f)
+        self.jacobian_f = _SimpleFunctionCache(jacobian_f)
+        self.norm_f = _SimpleFunctionCache(jnp.linalg.norm)
+        self.tolerance = tolerance
+        self.max_iter = max_iter
+        self.total_err = 1e20
+        self.lm_dampings = [0.5, 0.5, 0.5, 0.25, 0.125, 0]
+
+    def update(self, state, damping=0):
+        r = self.residual_f(state)
+        self.total_err = self.norm_f(r)
+        if self.total_err < self.tolerance:
+            return state
+        j = self.jacobian_f(state)
+        jtj = j.transpose() @ j
+        jte = j.transpose() @ r
+        if damping > 0:
+            damped_jtj = jtj + damping * jnp.diag(jnp.diag(jtj))
+        else:
+            damped_jtj = jtj
+        delta = jax.numpy.linalg.solve(damped_jtj, jte)
+
+        result = state - delta
+        delta_scale = 0.5
+        while self.norm_f(self.residual_f(result)) > self.total_err:
+            result = state - delta_scale * delta
+            delta_scale = delta_scale * 0.5
+        return result
+
+    def run(self, state):
+        for i in range(0, self.max_iter):
+            damping = self.lm_dampings[min(i, len(self.lm_dampings) - 1)]
+            new_state = self.update(state, damping)
+            if new_state is state:
+                break
+            state = new_state
+        print(f"Solved in {i} iterations")
+        return state
+
+
 def solve_everything(
     first_variable_or_function: Variable | WrappedFunction,
     solve_even_if_underconstrained=True,
@@ -398,6 +459,7 @@ def solve_everything(
     :param first_variable: the variable to use as starting point for traversal.
     """
     use_jit = True
+    use_custom_solver = True
 
     all_variables = set()
     all_constraints = set()
@@ -471,17 +533,19 @@ def solve_everything(
     def all_constraints_function(input_state):
         nonlocal residuals_count
         global _results_cache
+        if verbose:
+            print("running original all_constraints_function")
         _results_cache = {}
         # Todo: create jnp.array directly
         result = []
         for c in all_constraints:
             args = c.arguments
-            if verbose:
-                print(f"Constraint {c} with arguments {args}")
+            # if verbose:
+            #    print(f"Constraint {c} with arguments {args}")
             args_copy = _recursive_substitute(args, input_state, variable_indices)
             # r=c.function(*(input_state[variable_indices[v]] for v in c.arguments))
             r = c.function(*args_copy)
-            print(r)
+            # print(r)
             if is_iterable(r):
                 result += r
             else:
@@ -491,25 +555,49 @@ def solve_everything(
         _results_cache = {}
         return jax_result
 
-    if use_jit:
+    if use_custom_solver:
         fast_residual = jax.jit(all_constraints_function)
-        # jac = jax.jacfwd(all_constraints_function)
-        # fast_jac=jax.jit(jac)
-        # TODO: diagnostic messages (e.g. if under or over constrained, if fails to converge).
-        # solver = jaxopt.LevenbergMarquardt(residual_fun=all_constraints_function)
-        solver = jaxopt.LevenbergMarquardt(
-            residual_fun=fast_residual, maxiter=30, tol=1e-15, gtol=1e-15
-        )
-        jit_solver = jax.jit(solver.run)
-        result_params, state = jit_solver(params)
-        residuals = fast_residual(result_params)
+        jac = jax.jacfwd(all_constraints_function)
+        fast_jac = jax.jit(jac)
+        solver = SimpleSolver(fast_residual, fast_jac, 1e-15, 100)
+        result_params = solver.run(params)
+        residuals = solver.residual_f.cached_result
         print(f"Residuals: {residuals}")
-    else:  # pragma: no cover
-        solver = jaxopt.LevenbergMarquardt(
-            residual_fun=all_constraints_function, maxiter=30, tol=1e-15, gtol=1e-15
-        )
-        result_params, _ = solver.run(params)
-        residuals = all_constraints_function(result_params)
+    else:
+        if use_jit:
+            if verbose:
+                print("Starting jit compile")
+            fast_residual = jax.jit(all_constraints_function)
+            jac = jax.jacfwd(all_constraints_function)
+            fast_jac = jax.jit(jac)
+            # TODO: diagnostic messages (e.g. if under or over constrained, if fails to converge).
+            # solver = jaxopt.LevenbergMarquardt(residual_fun=all_constraints_function)
+            solver = jaxopt.LevenbergMarquardt(
+                residual_fun=fast_residual, maxiter=30, tol=1e-15, gtol=1e-15, jit=True
+            )
+            # solver=jaxopt.GaussNewton(residual_fun=all_constraints_function, tol=1E-15, verbose=True)
+
+            solver_run = jax.jit(solver.run)
+            # solver_run=solver.run
+            if verbose:
+                print("experiment: forcing compilation")
+                residuals = fast_residual(params)
+                jac_result = fast_jac(params)
+                print(f"experiment: done forcing compilation, jac={jac_result}")
+
+            if verbose:
+                print("Running solver")
+            result_params, state = solver_run(params)
+            if verbose:
+                print("Computing final residuals")
+            residuals = fast_residual(result_params)
+            print(f"Residuals: {residuals}")
+        else:  # pragma: no cover
+            solver = jaxopt.LevenbergMarquardt(
+                residual_fun=all_constraints_function, maxiter=30, tol=1e-15, gtol=1e-15
+            )
+            result_params, _ = solver.run(params)
+            residuals = all_constraints_function(result_params)
 
     if residuals_count < len(params):
         if not solve_even_if_underconstrained:

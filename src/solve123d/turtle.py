@@ -35,6 +35,8 @@ import math
 
 type FloatLike = cs.Variable | cs.WrappedFunction | float | int
 
+SCALE_FOR_ANGLE_PARALELISM_CONSTRAINTS = 0.01
+
 
 class Primitive:
     pass
@@ -156,6 +158,7 @@ class Turtle:
     """Global stack of nested `with Turtle as t:` contexts """
 
     simplify_equations = True
+    no_reparametrize_hack = False
     """
     When using .x= and .y= constraint, set the value after setting constraint. 
     That avoids pile up of very deep expressions by consecutive Turtle operations
@@ -214,19 +217,25 @@ class Turtle:
         Returns:
             A line as a tuple of two points
         """
-        if all_values(self.heading_vector):
+        if self.no_reparametrize_hack or all_values(self.heading_vector):
             new_pos = (
                 self.position[0] + self.heading_vector[0] * dist,
                 self.position[1] + self.heading_vector[1] * dist,
             )
         else:
-            new_pos = cs.var(1.234, 0.23452345)
+            # new_pos = cs.var(1.234, 0.23452345)
+            new_pos = cs.var(
+                cs.get_initial_value(
+                    self.position[0] + self.heading_vector[0] * dist,
+                    self.position[1] + self.heading_vector[1] * dist,
+                )
+            )
             delta = sub(new_pos, self.position)
             delta_len = cs.make_wrapper(jnp.hypot)(delta[0], delta[1])
-
-            parallel_metric(self.heading_vector, delta).make_zero()
-            # (self.heading_vector[0]-delta[0]/(delta_len+1E-50)).make_zero()
-            # (self.heading_vector[1]-delta[1]/(delta_len+1E-50)).make_zero()
+            (
+                parallel_metric(self.heading_vector, delta)
+                * SCALE_FOR_ANGLE_PARALELISM_CONSTRAINTS
+            ).make_zero()
             (delta_len - dist).make_zero()
         if self.is_down:
             self.point_list.append(self.position)
@@ -453,7 +462,7 @@ def forward(
         A line as a tuple of two points
     """
     if dist is None:
-        dist_non_abs = cs.var(1)
+        dist_non_abs = cs.var(1.1239452983467823465)
         dist_non_abs.name = "forward dist"
         dist = wrapped_abs(dist_non_abs)
     return Turtle.top().forward(dist)
