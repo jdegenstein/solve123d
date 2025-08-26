@@ -32,10 +32,10 @@ import ocp_vscode
 
 # Outer line
 cs.set_verbose(True)
-cs.solver_settings.max_tolerance=1E10
+cs.solver_settings.max_tolerance = 1e10
 center_1 = (4, -1)
 with Turtle() as t:
-    #t.simplify_equations=False
+    # t.simplify_equations=False
     pen_up()
     heading(-90)
     forward(2 + 1)
@@ -54,5 +54,5 @@ with Turtle() as t:
     t.x = 0
     t.y = 2 + 1
 line = t.to_build123d()
-#line += Rot(0, 0, 180) * line
+# line += Rot(0, 0, 180) * line
 ocp_vscode.show(line)

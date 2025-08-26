@@ -69,20 +69,20 @@ class TurtleBadGuessTest(unittest.TestCase):
         with Turtle() as t:
             t.turn_radius = 1
             l = cs.var(1)
-            l.name="l"
+            l.name = "l"
             forward(l)
             left(120).center[0].magic = 10
-            l2=cs.var(1)
-            l2.name="l2"
-            l2 = wrapped_abs(l2)            
+            l2 = cs.var(1)
+            l2.name = "l2"
+            l2 = wrapped_abs(l2)
             forward(l2)
-            bad_angle_guess=cs.var(340)
-            bad_angle_guess.name="bad_angle_guess"
+            bad_angle_guess = cs.var(340)
+            bad_angle_guess.name = "bad_angle_guess"
             left(bad_angle_guess)
             forward(l)
             left(120)
             closing_constraint(tangency=True)
-            #closing_constraint(tangency=False)
+            # closing_constraint(tangency=False)
         t.debug_print_solution()
         line = t.to_build123d()
         face = build123d.make_face(line)
