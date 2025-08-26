@@ -33,6 +33,8 @@ import build123d
 import jax
 import jax.numpy as jnp
 
+# jax.config.update("jax_debug_nans", True)
+
 wrapped_abs = cs.make_wrapper(jnp.abs)
 cs.set_verbose(True)
 
@@ -79,8 +81,8 @@ class TurtleBadGuessTest(unittest.TestCase):
             left(bad_angle_guess)
             forward(l)
             left(120)
-            #closing_constraint(tangency=True)
-            closing_constraint(tangency=False)
+            closing_constraint(tangency=True)
+            #closing_constraint(tangency=False)
         t.debug_print_solution()
         line = t.to_build123d()
         face = build123d.make_face(line)

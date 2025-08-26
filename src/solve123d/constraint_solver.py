@@ -409,6 +409,18 @@ class _SimpleFunctionCache:
             self.cached_for = a
         return self.cached_result
 
+debug_nan=True
+
+# Solver that works even if a is singular (by using QR decomposition)
+def solve_via_qr(a, b):
+    eps=1E-50
+    q,r=jnp.linalg.qr(a)
+    p=jnp.dot(q.T, b)
+    
+    def replace_small_with_one(a):
+        return jax.lax.cond(jnp.abs(a)>eps, lambda a: 0.0, lambda a: 1.0, a)
+    r_sanitizer=jax.vmap(replace_small_with_one)(jnp.diag(r))
+    return jax.scipy.linalg.solve_triangular(r+jnp.diag(r_sanitizer), p)
 
 class SimpleSolver:
     def __init__(self, residual_f, jacobian_f, tolerance, max_iter=100):
@@ -418,21 +430,36 @@ class SimpleSolver:
         self.tolerance = tolerance
         self.max_iter = max_iter
         self.total_err = 1e20
-        self.lm_dampings = [0.5, 0.5, 0.5, 0.25, 0.125, 0]
+        #self.lm_dampings = [0.5, 0.5, 0.5, 0.25, 0.125, 0]
+        self.lm_dampings=[]
 
     def update(self, state, damping=0):
+        print(state)
         r = self.residual_f(state)
         self.total_err = self.norm_f(r)
+        print(f"Solver error: {self.total_err}")
+        if jnp.isnan(self.total_err):
+            raise SolverError("NAN when solving!")
         if self.total_err < self.tolerance:
             return state
         j = self.jacobian_f(state)
+        if debug_nan and jnp.any(jnp.isnan(j)):
+            raise SolverError("NAN when solving!")
         jtj = j.transpose() @ j
         jte = j.transpose() @ r
+        if debug_nan and jnp.any(jnp.isnan(jte)):
+            raise SolverError("NAN when solving!")
         if damping > 0:
             damped_jtj = jtj + damping * jnp.diag(jnp.diag(jtj))
         else:
             damped_jtj = jtj
-        delta = jax.numpy.linalg.solve(damped_jtj, jte)
+        if debug_nan and jnp.any(jnp.isnan(damped_jtj)):
+            raise SolverError("NAN when solving!")
+        #delta = jax.numpy.linalg.solve(damped_jtj, jte)
+        delta=solve_via_qr(damped_jtj, jte)
+
+        if debug_nan and jnp.any(jnp.isnan(delta)):
+            raise SolverError("NAN when solving!")
 
         result = state - delta
         delta_scale = 0.5
@@ -443,7 +470,10 @@ class SimpleSolver:
 
     def run(self, state):
         for i in range(0, self.max_iter):
-            damping = self.lm_dampings[min(i, len(self.lm_dampings) - 1)]
+            if len(self.lm_dampings)>0:
+                damping = self.lm_dampings[min(i, len(self.lm_dampings) - 1)]
+            else:
+                damping=0
             new_state = self.update(state, damping)
             if new_state is state:
                 break
@@ -563,7 +593,14 @@ def solve_everything(
         fast_residual = jax.jit(all_constraints_function)
         jac = jax.jacfwd(all_constraints_function)
         fast_jac = jax.jit(jac)
-        solver = SimpleSolver(fast_residual, fast_jac, 1e-15, 100)
+        solver = SimpleSolver(fast_residual, fast_jac, 1e-12, 100)
+        residual=solver.residual_f(params)
+
+        if residuals_count < len(params):
+            if not solve_even_if_underconstrained:
+                print("Not solving underconstrained")
+                return
+
         result_params = solver.run(params)
         residuals = solver.residual_f.cached_result
         print(f"Residuals: {residuals}")

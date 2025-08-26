@@ -33,6 +33,9 @@ import build123d
 import jax
 import jax.numpy as jnp
 
+# 
+# jax.config.update("jax_debug_nans", True)
+
 wrapped_abs = cs.make_wrapper(jnp.abs)
 cs.set_verbose(True)
 

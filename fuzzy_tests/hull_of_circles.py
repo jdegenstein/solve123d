@@ -12,7 +12,7 @@ def random_angle():
 
 
 # currently fails on seed 56
-for i in range(117, 10000):
+for i in range(0, 10000):
     random.seed(i)
     print(f"Seed: {i}")
     r1 = 10 * random.random()

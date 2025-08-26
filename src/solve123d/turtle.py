@@ -161,10 +161,15 @@ def normalize_angle(a):
 
 wrapped_normalize_angle = cs.make_wrapper(normalize_angle)
 
+def make_non_zero(a, eps=1E-20):
+    return a+eps*jnp.sign(a+eps/2)
+
 # angle is rotation from dir1 to dir2
 def angle_error(dir1, dir2, angle=float(0.0)):
     ddir=rotate(dir2, conjugate(dir1))
-    alpha=wrapped_atan2(ddir[1], ddir[0])
+    # is this where it fails?
+
+    alpha=wrapped_atan2(cs.make_wrapper(make_non_zero)(ddir[1]), ddir[0])
     # Don't shortcircuit wrapped_normalized_angle if its one of jax types or anything else weird
     if isinstance(angle, (float, int)) and angle==0.0 :
         return alpha
@@ -309,17 +314,31 @@ class Turtle:
                 self.position[1] + self._heading_vector.delta[1] * dist
             )
         else:
-            assert not self._heading_vector.constrained_to_a_circle
-            new_pos = (
-                self.position[0] + self._heading_vector.delta[0],
-                self.position[1] + self._heading_vector.delta[1]
-            )
+            if self._heading_vector.constrained_to_a_circle:
+                new_pos = cs.var(
+                    cs.get_initial_value(
+                        self.position[0] + self._heading_vector.delta[0] * dist,
+                        self.position[1] + self._heading_vector.delta[1] * dist,
+                    )
+                )
+                new_pos[0].name="substituted position x"
+                new_pos[1].name="substituted position y"
+                delta = sub(new_pos, self.position)
+                a=angle_error(delta, self._heading_vector.delta)
+                a.name="paralelism constraint"
+                a.make_zero()
+            
+            else:
+                new_pos = (
+                    self.position[0] + self._heading_vector.delta[0],
+                    self.position[1] + self._heading_vector.delta[1]
+                )
 
-            delta_len = cs.make_wrapper(jnp.hypot)(self._heading_vector.delta[0], self._heading_vector.delta[1])
-            if dist is not None:
-                (delta_len - dist).make_zero()
+                delta_len = cs.make_wrapper(jnp.hypot)(self._heading_vector.delta[0], self._heading_vector.delta[1])
+                if dist is not None:
+                    (delta_len - dist).make_zero()
 
-            self._heading_vector.constrained_to_a_circle=True
+                self._heading_vector.constrained_to_a_circle=True
 
             # new_pos = cs.var(
             #     cs.get_initial_value(
@@ -471,7 +490,7 @@ class Turtle:
             center_offset = rotate(self._heading_vector.get_scaled_dir(r), (0, d))
 
             center = add(self.position, center_offset)
-            center_offset_new = rotate(new_heading_vector.get_normalized_dir(), (0, d * r))
+            center_offset_new = rotate(new_heading_vector.get_scaled_dir(r), (0, d))
             new_point = sub(center, center_offset_new)
 
             result = TArc(self.position, self._heading_vector.get_normalized_dir(), new_point, center, r)
