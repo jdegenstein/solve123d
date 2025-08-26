@@ -39,6 +39,8 @@ import jax.numpy as jnp
 wrapped_abs = cs.make_wrapper(jnp.abs)
 cs.set_verbose(True)
 
+# cs.set_opportunistic(True)
+
 
 class TurtleTest(unittest.TestCase):
     # TODO: more coverage for Turtle

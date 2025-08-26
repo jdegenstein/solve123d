@@ -116,13 +116,14 @@ class SolvingTest(unittest.TestCase):
     def test_magic(self):
         a = cs.Variable(1.2345)
         b = cs.var(1.2345)
-        cs.magic.zero = 2.0 - a * 3.0 + b
-        (a - b * 2.0).magic = -1
-
         self.assertEqual(
             (2.0 - a * 3.0 + b).initial_value,
             2.0 - a.initial_value * 3.0 + b.initial_value,
         )
+
+        cs.magic.zero = 2.0 - a * 3.0 + b
+        (a - b * 2.0).magic = -1
+
         self.assertEqual(cs.get_initial_value(2.0, a), (2.0, a.initial_value))
 
         test = cs.solve((2.0 - a * 3.0 + b).magic, a - b * 2.0 + 1.0)
@@ -135,6 +136,9 @@ class SolvingTest(unittest.TestCase):
         self.assertAlmostEqual(a.s - b.s * 2.0 + 1.0, 0)
 
     def test_overconstrained_except(self):
+        # Inapplicable to opportunistic solver
+        if cs.opportunistic:
+            return
         a = cs.Variable(1.2345)
         b = cs.var(1.2345)
         cs.magic.zero = 2.0 - a * 3.0 + b
@@ -144,6 +148,8 @@ class SolvingTest(unittest.TestCase):
             test = cs.solve(2.0 - a * 3.0 + b, a - b * 2.0 + 1.0)
 
     def test_overconstrained(self):
+        if cs.opportunistic:
+            return
         a = cs.Variable(1.2345)
         b = cs.var(1.2345)
         a.settings = cs.SolverSettings(max_tolerance=2e10)
@@ -243,6 +249,9 @@ class SolvingTest(unittest.TestCase):
         self.assertAlmostEqual(lcp(l2, (pt1[0].s + 0.5, pt1[1].s + math.sqrt(0.75))), 0)
 
     def test_dovetail_redundant_constraint(self):
+        # Unsuitable for opportunistic solver
+        if cs.opportunistic:
+            return
         r = 20
         d = 5
         w = 2

@@ -563,11 +563,13 @@ class Turtle:
             tangency: Whether to constrain tangency
         """
         applied_constraint = False
-        if not all_values(self.position[0], self.first_position[0]):
-            cs.magic.zero = self.position[0] - self.first_position[0]
+        x_diff = self.position[0] - self.first_position[0]
+        if not all_values(x_diff):
+            x_diff.make_zero()
             applied_constraint = True
-        if not all_values(self.position[1], self.first_position[1]):
-            cs.magic.zero = self.position[1] - self.first_position[1]
+        y_diff = self.position[1] - self.first_position[1]
+        if not all_values(y_diff):
+            y_diff.make_zero()
             applied_constraint = True
         # Tangency (if free enough)
         if tangency:
