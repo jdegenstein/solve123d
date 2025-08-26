@@ -32,8 +32,10 @@ import ocp_vscode
 
 # Outer line
 cs.set_verbose(True)
+cs.solver_settings.max_tolerance=1E10
 center_1 = (4, -1)
 with Turtle() as t:
+    #t.simplify_equations=False
     pen_up()
     heading(-90)
     forward(2 + 1)
@@ -46,11 +48,11 @@ with Turtle() as t:
     arc = left(cs.var(90), turn_radius=1.4)
     arc.center[0].magic = 7.8
     arc.center[1].magic = 4.8
-    right(turn_radius=3)
+    right(cs.var(90), turn_radius=3)
     t.y = 2 + 1
     forward()
     t.x = 0
     t.y = 2 + 1
 line = t.to_build123d()
-line += Rot(0, 0, 180) * line
+#line += Rot(0, 0, 180) * line
 ocp_vscode.show(line)

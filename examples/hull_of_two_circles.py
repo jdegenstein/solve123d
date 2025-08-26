@@ -71,9 +71,9 @@ with Turtle() as t:
     left(90)
     # the tangent of the arc is 90 degrees to the left of where radius is pointing
     pen_down()
-    left(turn_radius=r1)
+    left(var(0), turn_radius=r1)
     forward()
-    arc2_c = left(turn_radius=r2).center
+    arc2_c = left(var(0), turn_radius=r2).center
     arc2_c[0].magic = 0
     arc2_c[1].magic = h
     forward()

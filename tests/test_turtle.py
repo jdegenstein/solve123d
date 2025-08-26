@@ -116,6 +116,7 @@ class TurtleTest(unittest.TestCase):
         # self.assertAlmostEqual(abs(cs.solve(l)), math.sqrt(2.0) * 10)
 
     def test_teleport(self):
+        cs.solver_settings.max_tolerance=1E10
         with Turtle() as t:
             teleport(1, 1)
             forward(10)
@@ -123,7 +124,9 @@ class TurtleTest(unittest.TestCase):
             forward(10)
             left(90)
             forward(10)
-            left(turn_radius=cs.var(1))
+            r=cs.var(1)
+            r.name="r"
+            left(turn_radius=r)
             closing_constraint()
             teleport((1, 2))
             self.assertEqual(t.x, 1)
@@ -160,8 +163,7 @@ class TurtleTest(unittest.TestCase):
             left()
             forward(l)
             left(120)
-            t.heading_vector[0].magic = 1
-            t.heading_vector[1].magic = 0
+            t._heading_vector.be_parallel((1,0))
             closing_constraint()
         line = t.to_build123d()
         face = build123d.make_face(line)

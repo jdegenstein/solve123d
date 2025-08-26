@@ -1,0 +1,10 @@
+Constraint rewriting - may be too hard to implement
+
+When there is a constraint of the form:
+
+x0 - var1*cos(var2) = 0 
+y0 - var1*sin(var2) = 0
+
+rewrite it as 
+var1 = sqrt(x0**2 + y0**2)
+ var2 = atan2(y0, x0)

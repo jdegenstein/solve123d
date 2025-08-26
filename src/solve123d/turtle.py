@@ -70,16 +70,15 @@ class TArc(Primitive):
         tangent = cs.unjax(cs.solve(self.tangent_at_start))
         print(f"arc {start_point}_{tangent}->{end_point}")
 
-
 class TurnDir(Enum):
+    """When creating an arc, the solver needs to know which way the arc should go 
+    (because that determines if the circle center is to the left or to the right)
+
+    For constants, arc direction can be inferred, but for variables TurnDir is used as a parameter specifying arc direction.
+    """
     AUTO = 0
     LEFT = 1
     RIGHT = 2
-
-
-# Doing turns with arcs:
-# If direction is not given, see if directions are floats and use that
-# If directions are variables (unknown), raise an error
 
 
 # equivalent to complex product
@@ -94,10 +93,16 @@ def conjugate(a):
 def add(a, b):
     return (a[0] + b[0], a[1] + b[1])
 
-
 def sub(a, b):
     return (a[0] - b[0], a[1] - b[1])
 
+def norm(a):
+    return cs.make_wrapper(jnp.sqrt)(
+        a[0] ** 2 + a[1] ** 2 + 1E-60
+    )
+
+def vec_scale(a, s):
+    return (a[0]*s, a[1]*s)
 
 def all_values(*args):
     for a in cs.recursive_unpack(args):
@@ -129,6 +134,12 @@ def decouple_value(v):
 
 wrapped_abs = cs.make_wrapper(jnp.abs)
 
+
+wrapped_atan2 = cs.make_wrapper(jnp.atan2)
+
+# Avoid using wrapped_sin and wrapped_cos at all costs - use sin and cos on regular values, and 
+# for SolverEntity find a way to express equivalent constraint with atan2  
+# Rationale: sin and cos appearing in constraint expressions are problematic for the solver
 wrapped_sin = cs.make_wrapper(jnp.sin)
 wrapped_cos = cs.make_wrapper(jnp.cos)
 
@@ -136,13 +147,80 @@ wrapped_cos = cs.make_wrapper(jnp.cos)
 def decoupled_sin(v):
     return decouple_value(wrapped_sin(v))
 
-
 def decoupled_cos(v):
     return decouple_value(wrapped_cos(v))
 
+def angle_to_dir(a):
+    return jnp.cos(a), jnp.sin(a)
 
 def solver_sincos(a):
     return wrapped_sin(a), wrapped_cos(a)
+
+def normalize_angle(a):
+    return ((a+jnp.pi)%(2.0*jnp.pi))-jnp.pi
+
+wrapped_normalize_angle = cs.make_wrapper(normalize_angle)
+
+# angle is rotation from dir1 to dir2
+def angle_error(dir1, dir2, angle=float(0.0)):
+    ddir=rotate(dir2, conjugate(dir1))
+    alpha=wrapped_atan2(ddir[1], ddir[0])
+    # Don't shortcircuit wrapped_normalized_angle if its one of jax types or anything else weird
+    if isinstance(angle, (float, int)) and angle==0.0 :
+        return alpha
+    return wrapped_normalize_angle(alpha-angle)
+
+
+class SolverDirectionVector:
+    """
+    Solver-friendly direction vector (as opposed to solver-unfriendly direction vector obtained with sin and cos of an angle)
+    
+    Purpose: avoid sin(a)*dist , cos(a)*dist like expressions (with unknown a and dist) from appearing in the equations being solved by the 
+    constraint solver, by representing unknown directions with non normalized vectors"""
+    # TODO: maybe upgrade to a two-point representation, to avoid potentially long sums of unknown vectors?
+    delta=(1,0)
+    constrained_to_a_circle=False
+    original_angle_constraint=None
+    original_angle_entity=None
+    def __init__(self, angle, relative_to=(1, 0), make_constraint=False):
+        if isinstance(relative_to, SolverDirectionVector):
+            relative_to=relative_to.get_normalized_dir()
+        if isinstance(angle, cs.SolverEntity):
+            self.original_angle_entity=angle
+            self.delta=cs.var(rotate(angle_to_dir(angle.initial_value), cs.get_initial_value(relative_to)))
+            if make_constraint:
+                self.original_angle_constraint=angle_error(relative_to, self.delta, angle)
+                self.original_angle_constraint.make_zero()
+                #TODO: set up for constraint elision for unnecessary angles
+        else:
+            self.delta=rotate(angle_to_dir(angle), relative_to)
+            self.constrained_to_a_circle=True
+    def be_on_circle(self, r):
+        assert not self.constrained_to_a_circle
+        circle_constraint=norm(self.delta)-r
+        circle_constraint.name="direction vector to circle constraint"
+        circle_constraint.make_zero()
+        self.constrained_to_a_circle=True
+
+    def get_normalized_dir(self):
+        s = 1.0 / cs.make_wrapper(jnp.sqrt)(
+            self.delta[0] ** 2 + self.delta[1] ** 2 + 1E-60
+        )
+        return (s*self.delta[0], s*self.delta[1])
+    
+    def get_scaled_dir(self, r):
+        if self.constrained_to_a_circle:
+            return vec_scale(self.get_normalized_dir(),r)
+        self.be_on_circle(r)
+        return self.delta
+    
+    def be_parallel(self, other):
+        if isinstance(other, SolverDirectionVector):
+            other=other.delta
+        constraint=angle_error(self.delta, other)
+        constraint.name="Parallel constraint"
+        constraint.make_zero()
+
 
 
 class Turtle:
@@ -168,14 +246,17 @@ class Turtle:
     """
 
     @classmethod
-    def top(cls):
+    def top(cls) -> 'Turtle':
         return cls._turtle_stack[-1]
 
     def __init__(self, use_stack=True):
         self.point_list = []
         self.primitive_list = []
         self.is_down = True
-        self.heading_vector = (1, 0)
+
+        #self.heading_vector = (1, 0)
+        self._heading_vector=SolverDirectionVector(angle=0)
+
         self.position = (0, 0)
         self.turn_radius = 0
         self._use_stack = use_stack
@@ -188,7 +269,7 @@ class Turtle:
         if len(Turtle._turtle_stack) > 0 and self._use_stack:
             self.primitive_list = copy.copy(Turtle.top().primitive_list)
             self.is_down = Turtle.top().is_down
-            self.heading_vector = Turtle.top().heading_vector
+            self._heading_vector = Turtle.top()._heading_vector
             self.position = Turtle.top().position
             self.turn_radius = Turtle.top().turn_radius
         Turtle._turtle_stack.append(self)
@@ -196,6 +277,8 @@ class Turtle:
 
     def __exit__(self, type, value, traceback):
         print("Turtle end")
+        if not self._heading_vector.constrained_to_a_circle:
+            self._heading_vector.be_on_circle(1)
         Turtle._global_turtle = Turtle._turtle_stack[-1]
         del Turtle._turtle_stack[-1]
 
@@ -209,7 +292,7 @@ class Turtle:
             self.position = (x_or_pos, y)
 
     def forward(
-        self, dist
+        self, dist=None
     ) -> tuple[tuple[FloatLike, FloatLike], tuple[FloatLike, FloatLike]]:
         """Move the turtle forward by dist
         Args:
@@ -217,37 +300,72 @@ class Turtle:
         Returns:
             A line as a tuple of two points
         """
-        if self.no_reparametrize_hack or all_values(self.heading_vector):
+        if all_values(self._heading_vector.delta):
+            if dist is None:
+                # some value that is not 1 (to tiebreak solver, todo get values from a deterministic sequence)
+                dist=cs.absvar(1.239459234564)
             new_pos = (
-                self.position[0] + self.heading_vector[0] * dist,
-                self.position[1] + self.heading_vector[1] * dist,
+                self.position[0] + self._heading_vector.delta[0] * dist,
+                self.position[1] + self._heading_vector.delta[1] * dist
             )
         else:
-            # new_pos = cs.var(1.234, 0.23452345)
-            new_pos = cs.var(
-                cs.get_initial_value(
-                    self.position[0] + self.heading_vector[0] * dist,
-                    self.position[1] + self.heading_vector[1] * dist,
-                )
+            assert not self._heading_vector.constrained_to_a_circle
+            new_pos = (
+                self.position[0] + self._heading_vector.delta[0],
+                self.position[1] + self._heading_vector.delta[1]
             )
-            delta = sub(new_pos, self.position)
-            delta_len = cs.make_wrapper(jnp.hypot)(delta[0], delta[1])
-            (
-                parallel_metric(self.heading_vector, delta)
-                * SCALE_FOR_ANGLE_PARALELISM_CONSTRAINTS
-            ).make_zero()
-            (delta_len - dist).make_zero()
+
+            delta_len = cs.make_wrapper(jnp.hypot)(self._heading_vector.delta[0], self._heading_vector.delta[1])
+            if dist is not None:
+                (delta_len - dist).make_zero()
+
+            self._heading_vector.constrained_to_a_circle=True
+
+            # new_pos = cs.var(
+            #     cs.get_initial_value(
+            #         self.position[0] + self.heading_vector[0] * dist,
+            #         self.position[1] + self.heading_vector[1] * dist,
+            #     )
+            # )
+            # new_pos[0].name="substituted position x"
+            # new_pos[1].name="substituted position y"
+            # delta = sub(new_pos, self.position)
+            # delta_len = cs.make_wrapper(jnp.hypot)(delta[0], delta[1])
+            
+            # angle_constraint=parallel_metric(self.heading_vector, delta) * SCALE_FOR_ANGLE_PARALELISM_CONSTRAINTS
+            # angle_constraint.make_zero()
+            
+            # # Ensure correct new heading
+            # self.heading_vector=(delta[0]/delta_len, delta[1]/delta_len)
+            
+            # # Prepare elision of angle_constraint if angle is not used for anything
+            # heading_angle_var=self._heading_angle
+            # if isinstance(heading_angle_var, cs.WrappedFunction):
+            #     if len(heading_angle_var.arguments) == 1 :
+            #         heading_angle_var=heading_angle_var.arguments[0]
+            #     else:
+            #         print("Weird heading angle, no elision")
+            # if isinstance(heading_angle_var, cs.Variable) :
+            #     for v in angle_constraint.arguments :
+            #         if v is self._heading_angle :
+            #             def good_func(a):
+            #                 return len(heading_angle_var.constraints)>1
+            #             angle_constraint.good_func = good_func
+            #             break
+                
+            
+            
         if self.is_down:
             self.point_list.append(self.position)
             self.primitive_list.append(Line(self.position, new_pos))
             if self.first_heading_vector is None:
-                self.first_heading_vector = self.heading_vector
+                self.first_heading_vector = self._heading_vector
                 self.first_position = self.position
         result = (self.position, new_pos)
         self.position = new_pos
         return result
 
-    def left(self, angle, *, turn_radius=None) -> TArc:
+    def left(self, angle, *, turn_radius=None, angle_is_unimportant=False) -> TArc:
         """Turn the turtle left by angle
         Args:
             angle: Angle for the turn, scaled with self.angle_scale
@@ -255,14 +373,17 @@ class Turtle:
         Returns:
             An arc (possibly zero-radius) which you can use in constraints
         """
-        s, c = solver_sincos(self.angle_scale * angle)
+
+        new_heading=SolverDirectionVector(angle=angle*self.angle_scale, relative_to=self._heading_vector, make_constraint=not angle_is_unimportant)
+
         return self.change_heading_to(
-            rotate(self.heading_vector, (c, s)),
+            new_heading,
             turn_radius=turn_radius,
             turn_dir=TurnDir.LEFT,
+            angle_is_unimportant=angle_is_unimportant
         )
 
-    def right(self, angle, *, turn_radius=None) -> TArc:
+    def right(self, angle, *, turn_radius=None, angle_is_unimportant=False) -> TArc:
         """Turn the turtle right by angle
         Args:
             angle: Angle for the turn, scaled with self.angle_scale
@@ -270,11 +391,12 @@ class Turtle:
         Returns:
             An arc (possibly zero-radius) which you can use in constraints
         """
-        s, c = solver_sincos(-self.angle_scale * angle)
+        new_heading=SolverDirectionVector(angle=-angle*self.angle_scale, relative_to=self._heading_vector, make_constraint=not angle_is_unimportant)
         return self.change_heading_to(
-            rotate(self.heading_vector, (c, s)),
+            new_heading,
             turn_radius=turn_radius,
             turn_dir=TurnDir.RIGHT,
+            angle_is_unimportant=angle_is_unimportant
         )
 
     def heading(
@@ -284,6 +406,7 @@ class Turtle:
         *,
         turn_radius=None,
         turn_dir: TurnDir = TurnDir.AUTO,
+        angle_is_unimportant = False
     ) -> TArc:
         """Turn the turtle to point in a desired direction
         Args:
@@ -298,31 +421,26 @@ class Turtle:
         """
         if y is None:
             if isinstance(angle_or_x, collections.abc.Sequence):
-                scale = 1.0 / cs.make_wrapper(jnp.sqrt)(
-                    angle_or_x[0] ** 2 + angle_or_x[1] ** 2
-                )
-                return self.change_heading_to(
-                    (scale * angle_or_x[0], scale * angle_or_x[1]), turn_dir=turn_dir
-                )
+                new_heading=SolverDirectionVector(angle=0, relative_to=angle_or_x, make_constraint=not angle_is_unimportant)
             else:
-                s, c = solver_sincos(self.angle_scale * angle_or_x)
-                return self.change_heading_to(
-                    (c, s), turn_radius=turn_radius, turn_dir=turn_dir
-                )
+                new_heading=SolverDirectionVector(angle=angle_or_x*self.angle_scale, make_constraint=not angle_is_unimportant)
         else:
-            scale = 1.0 / cs.make_wrapper(jnp.sqrt)(angle_or_x**2 + y**2)
-            return self.change_heading_to(
-                (scale * angle_or_x, scale * y),
-                turn_radius=turn_radius,
-                turn_dir=turn_dir,
-            )
+            new_heading=SolverDirectionVector(angle=0, relative_to=(angle_or_x, y), make_constraint=not angle_is_unimportant)
+            
+        return self.change_heading_to(
+            new_heading,
+            turn_radius=turn_radius,
+            turn_dir=turn_dir,
+            angle_is_unimportant=angle_is_unimportant
+        )
 
     def change_heading_to(
         self,
-        new_heading_vector,
+        new_heading_vector:SolverDirectionVector,
         *,
         turn_radius=None,
         turn_dir: TurnDir = TurnDir.AUTO,
+        angle_is_unimportant = False
     ) -> TArc:
         """Turn the turtle to point in a desired direction
         Args:
@@ -337,8 +455,8 @@ class Turtle:
         r = turn_radius if turn_radius is not None else self.turn_radius
         if isinstance(r, (cs.WrappedFunction, cs.Variable, jax.Array)) or r != 0:
             if turn_dir == TurnDir.AUTO:
-                if all_values(self.heading_vector, new_heading_vector):
-                    delta = rotate(new_heading_vector, conjugate(self.heading_vector))
+                if all_values(self._heading_vector.delta, new_heading_vector.delta):
+                    delta = rotate(new_heading_vector.delta, conjugate(self._heading_vector.delta))
                     if delta[1] > 0:
                         turn_dir = TurnDir.LEFT
                     else:
@@ -350,23 +468,24 @@ class Turtle:
             d = 1 if turn_dir == TurnDir.LEFT else -1
             # scale = 1.0 / cs.make_wrapper(jnp.sqrt)(self.heading_vector[0]**2 + self.heading_vector[1]**2)
 
-            center_offset = rotate(self.heading_vector, (0, d * r))
+            center_offset = rotate(self._heading_vector.get_scaled_dir(r), (0, d))
+
             center = add(self.position, center_offset)
-            center_offset_new = rotate(new_heading_vector, (0, d * r))
+            center_offset_new = rotate(new_heading_vector.get_normalized_dir(), (0, d * r))
             new_point = sub(center, center_offset_new)
 
-            result = TArc(self.position, self.heading_vector, new_point, center, r)
+            result = TArc(self.position, self._heading_vector.get_normalized_dir(), new_point, center, r)
             if self.is_down:
                 self.primitive_list.append(result)
                 if self.first_heading_vector is None:
-                    self.first_heading_vector = self.heading_vector
+                    self.first_heading_vector = self._heading_vector
                     self.first_position = self.position
             self.position = new_point
         else:  # turn_radius==0 , return zero radius arc for consistently
             result = TArc(
-                self.position, self.heading_vector, self.position, self.position, r
+                self.position, self._heading_vector.get_normalized_dir(), self.position, self.position, r
             )
-        self.heading_vector = new_heading_vector
+        self._heading_vector = new_heading_vector
         return result
 
     def closing_constraint(self, tangency=False):
@@ -383,7 +502,8 @@ class Turtle:
             applied_constraint = True
         # Tangency (if free enough)
         if tangency:
-            parallel_metric(self.heading_vector, self.first_heading_vector).make_zero()
+            #parallel_metric(self.heading_vector, self.first_heading_vector).make_zero()
+            self._heading_vector.be_parallel(self.first_heading_vector)
         if not applied_constraint:
             print(
                 "Turtle warning: closing_constraint() does nothing (starting and ending points are constrained)"

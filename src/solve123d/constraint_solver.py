@@ -147,6 +147,7 @@ class WrappedFunction(SolverEntity):
     """Represents a function used as a geometric constraint"""
 
     cached_initial_value = None
+    good_func = None
 
     def make_zero(self):
         """Creates a constraint that the wrapped function equates to zero"""
@@ -475,10 +476,13 @@ def solve_everything(
                     all_variables.add(a)
                     deep_filter(filter_item, *a.constraints)
         elif isinstance(a, WrappedFunction):
-            if a not in all_constraints:
-                a.append_settings_to(settings)
-                all_constraints.add(a)
-                deep_filter(filter_item, a.arguments)
+            if a.good_func is None or a.good_func(a):
+                if a not in all_constraints:
+                    a.append_settings_to(settings)
+                    all_constraints.add(a)
+                    deep_filter(filter_item, a.arguments)
+            else:
+                print("Constraint elision")
         else:  # pragma: no cover
             pass
 
