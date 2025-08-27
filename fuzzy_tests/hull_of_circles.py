@@ -4,6 +4,9 @@ from solve123d import *
 from solve123d.turtle import *
 import random
 
+from build123d import *
+import ocp_vscode
+
 cs.set_verbose(True)
 
 
@@ -11,8 +14,10 @@ def random_angle():
     return 720 * random.random() - 360
 
 
+failures = 0
+
 # currently fails on seed 56
-for i in range(106, 10000):
+for i in range(102, 10000):
     random.seed(i)
     print(f"Seed: {i}")
     r1 = 10 * random.random()
@@ -21,9 +26,9 @@ for i in range(106, 10000):
     with Turtle() as t:
         t.simplify_equations = False
         pen_up()
+
         a1 = var(720 * random.random() - 360)
         a1.name = "bad_a1"
-
         heading(a1)
         forward(r1)
         left(90)
@@ -47,4 +52,18 @@ for i in range(106, 10000):
         bad_forward_2.name = "bad_forward_2"
         forward(bad_forward_2)
         closing_constraint(tangency=True)
-    t.debug_print_solution()
+    try:
+        t.debug_print_solution()
+    except cs.SolverError:
+        failures += 1
+        print(f"Failure {failures} at seed {i}")
+        t.debug_print_solution()
+
+        # line=t.to_build123d()
+        circle1 = Circle(r1)
+        circle2 = Pos(0, h) * Circle(r2)
+        prims = [*t.to_build123d_list(ignore_errors=True, debug_objects=True)]
+        ocp_vscode.show(circle1, circle2, prims)
+        breakpoint()
+
+        # raise

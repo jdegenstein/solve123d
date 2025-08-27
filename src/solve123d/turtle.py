@@ -33,7 +33,7 @@ import jax.numpy as jnp
 import build123d
 import math
 
-type FloatLike = cs.Variable | cs.WrappedFunction | float | int
+type FloatLike = cs.Variable | cs.WrappedFunction | float | int | jax.Array
 
 SCALE_FOR_ANGLE_PARALELISM_CONSTRAINTS = 0.1
 
@@ -102,6 +102,10 @@ def sub(a, b):
 
 def norm(a):
     return cs.make_wrapper(jnp.hypot)(a[0], a[1]) + 1e-25
+
+
+def normalized(a):
+    return (1.0 / norm(a)) * a
 
 
 def vec_scale(a, s):
@@ -217,6 +221,7 @@ class SolverDirectionVector:
                 self.original_angle_constraint.make_zero()
                 # TODO: set up for constraint elision for unnecessary angles
         else:
+            # TODO: fix or rethink, this is actually very problematic (relative_to may be unknown)
             self.delta = rotate(angle_to_dir(angle), relative_to)
             self.constrained_to_a_circle = True
 
@@ -245,6 +250,172 @@ class SolverDirectionVector:
         )
         constraint.name = "Parallel constraint"
         constraint.make_zero()
+
+
+class Direction:
+    """Base direction class. Also represents a direction we don't care about"""
+
+    _ORDER = 0  # Used for re-ordering
+
+    def known(self):
+        """True if its all values, false otherwise"""
+        assert self.__class__ == Direction
+        return False
+
+    def negate(self):
+        """Negative angle (left vs right)"""
+        assert self.__class__ == Direction
+        return self
+
+    def combine(self, other):
+        """Works like addition of angles."""
+        if self._ORDER <= other._ORDER:
+            return self._combine(other)
+        else:
+            return other._combine(self)
+
+    def _combine(self, other):
+        """Every implementation can assume that self._ORDER<=other._ORDER"""
+        if other._ORDER > 0:
+            raise ValueError(
+                "Combining unspecified direction with a specified direction is disallowed. "
+                "Unspecified direction should only be used to signify that you don't know and don't care about the direction"
+            )
+        assert self.__class__ == Direction
+        return self
+
+
+class DirectionAngle(Direction):
+    _ORDER = 1
+
+    def __init__(self, a):
+        self.angle = a
+
+    def known(self):
+        return all_values(self.angle)
+
+    def negate(self):
+        return DirectionAngle(-self.angle)
+
+    def dir_u(self):
+        return self.dir_n
+
+    def dir_n(self):
+        return angle_to_dir(self.angle)
+
+    def _combine(self, other):
+        if isinstance(other, DirectionAngle):
+            return DirectionAngle(self.angle + other.angle)
+        if other._ORDER > 1:
+            return DirectionNormalized(self.dir_n)._combine(other)
+
+
+class DirectionNormalized(Direction):
+    _ORDER = 2
+
+    def __init__(self, direction):
+        self.direction = direction
+
+    def known(self):
+        return all_values(self.direction)
+
+    def dir_u(self):
+        return self.direction
+
+    def dir_n(self):
+        return self.direction
+
+    def negate(self):
+        return DirectionNormalized(conjugate(self.direction))
+
+    def _combine(self, other):
+        if isinstance(other, DirectionNormalized):
+            return DirectionNormalized(rotate(self.direction, other.direction))
+        if isinstance(other, DirectionUnnormalized):
+            return DirectionUnnormalized(rotate(self.direction, other.direction))
+        if isinstance(other, DirectionDiff):
+            return DirectionUnnormalized(rotate(self.direction, other.dir_u()))
+        assert False
+
+
+class DirectionUnnormalized(Direction):
+    _ORDER = 3
+
+    def __init__(self, dir):
+        self.direction = dir
+
+    def known(self):
+        return all_values(self.direction)
+
+    def dir_u(self):
+        return self.direction
+
+    def dir_n(self):
+        return normalized(self.direction)
+
+    def negate(self):
+        return DirectionUnnormalized(conjugate(self.direction))
+
+    def _combine(self, other):
+        if isinstance(other, DirectionUnnormalized):
+            print(
+                "Product of two unnormalized directions. Solver might benefit from normalization"
+            )
+            return DirectionUnnormalized(rotate(self.direction, other.direction))
+        if isinstance(other, DirectionDiff):
+            print(
+                "Product of unnormalized direction and difference direction. Solver might benefit from normalization"
+            )
+            return DirectionUnnormalized(rotate(self.direction, other.dir_u()))
+        assert False
+
+class DirectionDiff(Direction):
+    _ORDER = 4
+
+    def __init__(self, points):
+        self.points = points
+
+    def known(self):
+        return all_values(self.points)
+
+    def dir_u(self):
+        return sub(self.points[1], self.points[0])
+
+    def dir_n(self):
+        return normalized(self.dir_u)
+
+    def negate(self):
+        return DirectionDiff(
+            (
+                self.points[0],
+                (self.points[1][0], self.points[0][1] * 2 - self.points[1][1]),
+            )
+        )
+
+    def _combine(self, other):
+        if isinstance(other, DirectionDiff):
+            print(
+                "Product of difference direction and difference direction. Solver might benefit from normalization"
+            )
+            return DirectionUnnormalized(rotate(self.dir_u(), other.dir_u()))
+
+
+# class DirectionKind(Enum):
+#     NOT_SET=0 # Nobody specified the direction.
+#     ANGLE=1
+#     NORMALIZED=2
+#     UNNORMALIZED=3
+#     DIFFERENCE=4
+
+# class Direction:
+#     kind=DirectionKind.NOT_SET
+#     def __init__(*, angle=None, dir=None, udir=None, pts=None):
+#         if angle is not None:
+#             self.kind=DirectionKind.ANGLE
+#             self.angle=angle
+
+#     @property
+#     def is_known(self):
 
 
 class Turtle:
@@ -343,11 +514,20 @@ class Turtle:
                 new_pos[0].name = "substituted position x"
                 new_pos[1].name = "substituted position y"
                 delta = sub(new_pos, self.position)
+
+                self._heading_vector = SolverDirectionVector(0, delta, True)
+                self._heading_vector.constrained_to_a_circle = False
                 if dist is not None:
-                    (norm(delta) - dist).make_zero()
-                a = angle_error(delta, self._heading_vector.delta)
-                a.name = "paralelism constraint"
-                a.make_zero()
+                    self._heading_vector.be_on_circle(dist)
+
+                # refactored into SolverDirectionVector
+                # a = angle_error(delta, self._heading_vector.delta)
+                # a.name = "paralelism constraint"
+                # a.make_zero()
+                # self._heading_vector.delta=delta
+                # if dist is not None:
+                #     (norm(delta) - dist).make_zero()
+                #     self._heading_vector.constrained_to_a_circle=True
 
             else:
                 new_pos = (
@@ -530,6 +710,11 @@ class Turtle:
             center_offset = rotate(self._heading_vector.get_scaled_dir(r), (0, d))
 
             center = add(self.position, center_offset)
+            # center2 = cs.var(cs.get_initial_value(center))
+            # (center2[0]-center[0]).make_zero()
+            # (center2[1]-center[1]).make_zero()
+            # center=center2
+
             center_offset_new = rotate(new_heading_vector.get_scaled_dir(r), (0, d))
             new_point = sub(center, center_offset_new)
 
@@ -584,20 +769,74 @@ class Turtle:
         for p in self.primitive_list:
             p.debug_print()
 
-    def to_build123d(self):
-        """Convert to a build123d line"""
-        with build123d.BuildLine() as l:
-            for p in self.primitive_list:
-                if isinstance(p, Line):
-                    p0 = cs.unjax(cs.solve(p.points[0]))
-                    p1 = cs.unjax(cs.solve(p.points[1]))
-                    build123d.Line(p0, p1)
-                elif isinstance(p, TArc):
-                    build123d.TangentArc(
+    def to_build123d_list(self, ignore_errors=False, debug_objects=True):
+        """Iterable list of build123d objects"""
+        for i, p in enumerate(self.primitive_list):
+            if isinstance(p, Line):
+                p0 = cs.unjax(cs.solve(p.points[0]))
+                p1 = cs.unjax(cs.solve(p.points[1]))
+                try:
+                    line = build123d.Line(p0, p1)
+                    line.name = f"l{i}"
+                    yield line
+                except:
+                    if not ignore_errors:
+                        raise
+            elif isinstance(p, TArc):
+                try:
+                    arc = build123d.TangentArc(
                         cs.unjax(cs.solve(p.start_point)),
                         cs.unjax(cs.solve(p.end_point)),
                         tangent=cs.unjax(cs.solve(p.tangent_at_start)),
                     )
+                    arc.name = f"a{i}"
+                    yield arc
+                    if debug_objects:
+                        circle = build123d.CenterArc(
+                            cs.solve(p.center),
+                            cs.solve(p.radius),
+                            start_angle=0,
+                            arc_size=360,
+                        )
+                        circle.name = f"a{i} radius"
+                        circle.color = "green"
+                        yield circle
+                        # arc_arrow=build123d.Arrow(0.2, arc, shaft_width=0.05, head_at_start=True)
+                        # arc_arrow.color='red'
+                        arc_start = build123d.CenterArc(
+                            cs.solve(p.start_point), 0.1, start_angle=0, arc_size=360
+                        )
+                        arc_start.color = "red"
+                        arc_start.name = f"a{i} start"
+                        yield arc_start
+                except:
+                    if not ignore_errors:
+                        raise
+            else:  # pragma: no cover
+                raise RuntimeError("Unsupported primitive for build123d")
+
+    def to_build123d(self, ignore_errors=False):
+        """Convert to a build123d line"""
+        with build123d.BuildLine() as l:
+            for i, p in enumerate(self.primitive_list):
+                if isinstance(p, Line):
+                    p0 = cs.unjax(cs.solve(p.points[0]))
+                    p1 = cs.unjax(cs.solve(p.points[1]))
+                    try:
+                        build123d.Line(p0, p1).name = f"l{i}"
+                    except:
+                        if not ignore_errors:
+                            raise
+                elif isinstance(p, TArc):
+                    try:
+                        build123d.TangentArc(
+                            cs.unjax(cs.solve(p.start_point)),
+                            cs.unjax(cs.solve(p.end_point)),
+                            tangent=cs.unjax(cs.solve(p.tangent_at_start)),
+                        ).name = f"a{i}"
+                    except:
+                        if not ignore_errors:
+                            raise
                 else:  # pragma: no cover
                     raise RuntimeError("Unsupported primitive for build123d")
 
