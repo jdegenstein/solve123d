@@ -149,8 +149,9 @@ class WrappedFunction(SolverEntity):
     cached_initial_value = None
     good_func = None
 
-    def make_zero(self):
+    def make_zero(self, name=""):
         """Creates a constraint that the wrapped function equates to zero"""
+        self.name = name
         variables_to_solve = set()
         for a in recursive_unpack(self.arguments):
             if isinstance(a, Variable):
