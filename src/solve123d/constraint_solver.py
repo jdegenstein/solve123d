@@ -59,7 +59,7 @@ class SolverSettings:
                         self.__dict__[k] = self.settings_metadata[k]["combine"](
                             self.__dict__[k], v
                         )
-                    except KeyError:
+                    except KeyError: # pragma: no cover
                         pass
             else:
                 self.__dict__[k] = v
@@ -437,6 +437,7 @@ def solve_via_qr(a, b):
 
 
 class SimpleSolver:
+    verbose=False
     def __init__(self, residual_f, jacobian_f, tolerance, max_iter=100):
         self.residual_f = _SimpleFunctionCache(residual_f)
         self.jacobian_f = _SimpleFunctionCache(jacobian_f)
@@ -446,33 +447,36 @@ class SimpleSolver:
         self.total_err = 1e20
         # self.lm_dampings = [0.5, 0.5, 0.5, 0.25, 0.125, 0]
         self.lm_dampings = []
+        
 
     def update(self, state, damping=0):
-        print(state)
+        if self.verbose:
+            print(state)
         r = self.residual_f(state)
         self.total_err = self.norm_f(r)
-        print(f"Solver error: {self.total_err}")
-        if jnp.isnan(self.total_err):
+        if self.verbose:
+            print(f"Solver error: {self.total_err}")
+        if jnp.isnan(self.total_err): # pragma: no cover
             raise SolverError("NAN when solving!")
         if self.total_err < self.tolerance:
             return state
         j = self.jacobian_f(state)
-        if debug_nan and jnp.any(jnp.isnan(j)):
+        if debug_nan and jnp.any(jnp.isnan(j)): # pragma: no cover
             raise SolverError("NAN when solving!")
         jtj = j.transpose() @ j
         jte = j.transpose() @ r
-        if debug_nan and jnp.any(jnp.isnan(jte)):
+        if debug_nan and jnp.any(jnp.isnan(jte)): # pragma: no cover
             raise SolverError("NAN when solving!")
         if damping > 0:
             damped_jtj = jtj + damping * jnp.diag(jnp.diag(jtj))
         else:
             damped_jtj = jtj
-        if debug_nan and jnp.any(jnp.isnan(damped_jtj)):
+        if debug_nan and jnp.any(jnp.isnan(damped_jtj)): # pragma: no cover
             raise SolverError("NAN when solving!")
         # delta = jax.numpy.linalg.solve(damped_jtj, jte)
         delta = solve_via_qr(damped_jtj, jte)
 
-        if debug_nan and jnp.any(jnp.isnan(delta)):
+        if debug_nan and jnp.any(jnp.isnan(delta)): # pragma: no cover
             raise SolverError("NAN when solving!")
 
         result = state - delta
@@ -492,7 +496,8 @@ class SimpleSolver:
             if new_state is state:
                 break
             state = new_state
-        print(f"Solved in {i} iterations")
+        if self.verbose:
+            print(f"Solved in {i} iterations")
         return state
 
 
