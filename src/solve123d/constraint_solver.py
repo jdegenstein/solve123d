@@ -621,6 +621,8 @@ def solve_everything(
         residual = solver.residual_f(params)
 
         if residuals_count < len(params):
+            if verbose:
+                print(f"Under constrained: {residuals_count} constraints, {len(params)} params")
             if not solve_even_if_underconstrained:
                 print("Not solving underconstrained")
                 return
