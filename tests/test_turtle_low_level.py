@@ -74,6 +74,91 @@ class LowLevelTurtleTest(unittest.TestCase):
         e = turtle.angle_error((0, 1), (-1, -1), math.radians(0))
         self.assertAlmostEqual(e, math.radians(135))
 
+    def test_directions(self):
+        a = math.radians(71)
+        b = math.radians(13)
+        c = math.radians(17)
+        d = math.radians(27)
+        to_test = (
+            turtle.DirectionAngle(a),
+            turtle.DirectionNormalized((math.cos(b), math.sin(b))),
+            turtle.DirectionUnnormalized((math.cos(c) * 2, math.sin(c) * 2)),
+            turtle.DirectionDiff(((2, 3), (2 + math.cos(d) * 2, 3 + math.sin(d) * 2))),
+        )
+        angles = (a, b, c, d)
+        for i, x in enumerate(to_test):
+            self.assertTrue(x.known())
+            cmp = turtle.DirectionAngle(angles[i])
+            self.assertAlmostEqual(turtle.angle_error(x.dir_n(), cmp.dir_n()), 0.0)
+            for j, y in enumerate(to_test):
+                combined = x.combine(y)
+                compare = turtle.DirectionAngle(angles[i] + angles[j])
+                self.assertAlmostEqual(
+                    turtle.angle_error(combined.dir_n(), compare.dir_n()), 0.0
+                )
+                self.assertAlmostEqual(
+                    turtle.angle_error(combined.dir_u(), compare.dir_u()), 0.0
+                )
+                self.assertAlmostEqual(
+                    turtle.angle_error(combined.dir_u(), compare.dir_n()), 0.0
+                )
+
+                combined = x.combine(y.negate())
+                compare = turtle.DirectionAngle(angles[i] - angles[j])
+                self.assertAlmostEqual(
+                    turtle.angle_error(combined.dir_n(), compare.dir_n()), 0.0
+                )
+                self.assertAlmostEqual(
+                    turtle.angle_error(combined.dir_u(), compare.dir_u()), 0.0
+                )
+                self.assertAlmostEqual(
+                    turtle.angle_error(combined.dir_u(), compare.dir_n()), 0.0
+                )
+
+        for x in to_test:
+            with self.assertRaises(ValueError):
+                blah = x.combine(turtle.Direction())
+            with self.assertRaises(ValueError):
+                blah = turtle.Direction().combine(x)
+
+        u1 = turtle.Direction()
+        u2 = turtle.Direction()
+        self.assertTrue(u1.combine(u2).__class__ is turtle.Direction)
+
+    def test_make_direction(self):
+        a = turtle.make_direction_from_user_params(0.5, math.sqrt(0.75), 0)
+        b = turtle.make_direction_from_user_params(60, None, math.pi / 180.0)
+        c = turtle.make_direction_from_user_params(
+            (0.5, math.sqrt(0.75)), None, math.pi / 180.0
+        )
+        self.assertAlmostEqual(turtle.angle_error(a.dir_n(), b.dir_n()), 0.0)
+        self.assertAlmostEqual(turtle.angle_error(a.dir_n(), c.dir_n()), 0.0)
+
+    def test_make_parallel(self):
+        vec1 = cs.var(turtle.angle_to_dir(1.2))
+        (vec1[0] ** 2 + vec1[1] ** 2 - 1.0).make_zero()
+        vec2 = cs.var(turtle.angle_to_dir(1.7))
+        (vec2[0] ** 2 + vec2[1] ** 2 - 3.0).make_zero()
+        vec3 = cs.var(turtle.angle_to_dir(2))
+        (vec3[0] ** 2 + vec3[1] ** 2 - 2.0).make_zero()
+        to_test = (
+            turtle.DirectionAngle(cs.var(1)),
+            turtle.DirectionNormalized(vec1),
+            turtle.DirectionUnnormalized(vec2),
+            turtle.DirectionDiff(((2, 3), (2 + vec3[0], 3 + vec3[1]))),
+        )
+
+        for i, x in enumerate(to_test):
+            self.assertFalse(x.known())
+            for j, y in enumerate(to_test):
+                turtle.make_parallel(x, y)
+
+        for i, x in enumerate(to_test):
+            for j, y in enumerate(to_test):
+                self.assertAlmostEqual(
+                    turtle.angle_error(*cs.solve(x.dir_n(), y.dir_n())), 0.0
+                )
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
