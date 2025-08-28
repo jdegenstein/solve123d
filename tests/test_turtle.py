@@ -168,8 +168,7 @@ class TurtleTest(unittest.TestCase):
             left()
             forward(l)
             left(120)
-            t._heading_vector.be_parallel((1, 0))
-            closing_constraint()
+            closing_constraint(tangency=True)
         line = t.to_build123d()
         face = build123d.make_face(line)
         a = face.area

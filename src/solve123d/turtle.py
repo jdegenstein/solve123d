@@ -107,8 +107,10 @@ def norm(a):
 def vec_scale(a, s):
     return (a[0] * s, a[1] * s)
 
+
 def normalized(a):
     return vec_scale(a, 1.0 / norm(a))
+
 
 def all_values(*args):
     for a in cs.recursive_unpack(args):
@@ -160,6 +162,7 @@ def decoupled_cos(v):
 
 def angle_to_dir(a):
     return wrapped_cos(a), wrapped_sin(a)
+
 
 def solver_sincos(a):
     return wrapped_sin(a), wrapped_cos(a)
@@ -235,6 +238,8 @@ class DirectionAngle(Direction):
 
     def __init__(self, a):
         self.angle = a
+        if isinstance(a, float) and (a < -2.0 * math.pi or a > 2.0 * math.pi):
+            print("Suspicious angle in radians: {a}")
 
     def known(self):
         return all_values(self.angle)
@@ -350,11 +355,11 @@ class DirectionDiff(Direction):
 type AnyDirection = Direction | DirectionAngle | DirectionNormalized | DirectionUnnormalized | DirectionDiff
 
 
-def make_direction_from_user_params(a, b):
+def make_direction_from_user_params(a, b, angle_scale):
     if b is None:
         if isinstance(a, collections.abc.Sequence):
             return DirectionUnnormalized(a)
-        return DirectionAngle(a)
+        return DirectionAngle(a * angle_scale)
     return DirectionUnnormalized((a, b))
 
 
@@ -474,7 +479,7 @@ class Turtle:
         """Move the turtle forward by dist
         Args:
             dist: Distance to move by
-            draw_line: 
+            draw_line:
             If None, use pen status (controlled with pen_up and pen_down commands)
             If True, draw a line regardless of pen state
             If False, don't draw a line regardless of pen state
@@ -536,7 +541,7 @@ class Turtle:
             #             angle_constraint.good_func = good_func
             #             break
 
-        if self.is_down and ((draw_line is None) or draw_line) :
+        if self.is_down and ((draw_line is None) or draw_line):
             self.point_list.append(self.position)
             self.primitive_list.append(Line(self.position, new_pos))
             if self.first_direction is None:
@@ -556,10 +561,10 @@ class Turtle:
         """
         # TODO: better treatment of unspecified angles
         if angle is None:
-            angle = cs.var(self.angle_scale * 178.1234123452345)
+            angle = cs.var(178.1234123452345)
             angle.name = "left() unknown angle"
 
-        new_direction = self.direction.combine(DirectionAngle(angle))
+        new_direction = self.direction.combine(DirectionAngle(angle * self.angle_scale))
 
         return self.change_heading_to(
             new_direction, turn_radius=turn_radius, turn_dir=TurnDir.LEFT
@@ -575,23 +580,19 @@ class Turtle:
         """
         # TODO: better treatment of unspecified angles
         if angle is None:
-            angle = cs.var(self.angle_scale * 178.1234123452345)
+            angle = cs.var(178.1234123452345)
             angle.name = "right() unknown angle"
 
-        new_direction = self.direction.combine(DirectionAngle(-angle))
+        new_direction = self.direction.combine(
+            DirectionAngle(angle * (-self.angle_scale))
+        )
 
         return self.change_heading_to(
             new_direction, turn_radius=turn_radius, turn_dir=TurnDir.RIGHT
         )
 
     def heading(
-        self,
-        angle_or_x,
-        y=None,
-        *,
-        turn_radius=None,
-        turn_dir: TurnDir = TurnDir.AUTO,
-        angle_is_unimportant=False,
+        self, angle_or_x, y=None, *, turn_radius=None, turn_dir: TurnDir = TurnDir.AUTO
     ) -> TArc:
         """Turn the turtle to point in a desired direction
         Args:
@@ -606,7 +607,7 @@ class Turtle:
         """
 
         return self.change_heading_to(
-            make_direction_from_user_params(angle_or_x, y),
+            make_direction_from_user_params(angle_or_x, y, self.angle_scale),
             turn_radius=turn_radius,
             turn_dir=turn_dir,
         )
@@ -632,7 +633,7 @@ class Turtle:
         if isinstance(r, (cs.WrappedFunction, cs.Variable, jax.Array)) or r != 0:
             if turn_dir == TurnDir.AUTO:
                 if self.direction.known() and new_direction.known():
-                    if new_direction.combine(self.direction).dir_u()[1] > 0:
+                    if new_direction.combine(self.direction.negate()).dir_u()[1] > 0:
                         turn_dir = TurnDir.LEFT
                     else:
                         turn_dir = TurnDir.RIGHT
@@ -643,7 +644,6 @@ class Turtle:
             d = 1 if turn_dir == TurnDir.LEFT else -1
             # scale = 1.0 / cs.make_wrapper(jnp.sqrt)(self.heading_vector[0]**2 + self.heading_vector[1]**2)
 
-            
             initial_dir = self.direction.dir_n()
             initial_pos = self.position
 
@@ -652,24 +652,25 @@ class Turtle:
                     self.first_direction = self.direction
                     self.first_position = self.position
 
+            api_90_deg = 0.5 * math.pi / self.angle_scale
             if turn_dir == TurnDir.LEFT:
-                self.left(90, turn_radius=0)
+                self.left(api_90_deg, turn_radius=0)
                 self.forward(r, draw_line=False)
                 center = self.position
                 self.change_heading_to(
-                    new_direction.combine(DirectionAngle(-90)), turn_radius=0
+                    new_direction.combine(DirectionAngle(-0.5 * math.pi)), turn_radius=0
                 )
                 self.forward(r, draw_line=False)
-                left(90, turn_radius=0)
+                left(api_90_deg, turn_radius=0)
             else:
-                self.right(90, turn_radius=0)
+                self.right(api_90_deg, turn_radius=0)
                 self.forward(r, draw_line=False)
                 center = self.position
                 self.change_heading_to(
-                    new_direction.combine(DirectionAngle(90)), turn_radius=0
+                    new_direction.combine(DirectionAngle(0.5 * math.pi)), turn_radius=0
                 )
                 self.forward(r, draw_line=False)
-                self.right(90, turn_radius=0)
+                self.right(api_90_deg, turn_radius=0)
 
             # center_offset = rotate(self._heading_vector.get_scaled_dir(r), (0, d))
 
@@ -709,7 +710,7 @@ class Turtle:
         # Tangency (if free enough)
         if tangency:
             # parallel_metric(self.heading_vector, self.first_heading_vector).make_zero()
-            self._heading_vector.be_parallel(self.first_heading_vector)
+            make_parallel(self.direction, self.first_direction)
         if not applied_constraint:
             print(
                 "Turtle warning: closing_constraint() does nothing (starting and ending points are constrained)"

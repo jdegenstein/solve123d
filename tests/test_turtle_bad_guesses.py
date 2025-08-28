@@ -76,7 +76,7 @@ class TurtleBadGuessTest(unittest.TestCase):
             l2.name = "l2"
             l2 = wrapped_abs(l2)
             forward(l2)
-            bad_angle_guess = cs.var(340)
+            bad_angle_guess = cs.var(100)  # cs.var(340)
             bad_angle_guess.name = "bad_angle_guess"
             left(bad_angle_guess)
             forward(l)
