@@ -350,11 +350,11 @@ class DirectionDiff(Direction):
 type AnyDirection = Direction | DirectionAngle | DirectionNormalized | DirectionUnnormalized | DirectionDiff
 
 
-def make_direction_from_user_params(a, b):
+def make_direction_from_user_params(a, b, angle_scale):
     if b is None:
         if isinstance(a, collections.abc.Sequence):
             return DirectionUnnormalized(a)
-        return DirectionAngle(a)
+        return DirectionAngle(a*angle_scale)
     return DirectionUnnormalized((a, b))
 
 
@@ -556,10 +556,10 @@ class Turtle:
         """
         # TODO: better treatment of unspecified angles
         if angle is None:
-            angle = cs.var(self.angle_scale * 178.1234123452345)
+            angle = cs.var(178.1234123452345)
             angle.name = "left() unknown angle"
 
-        new_direction = self.direction.combine(DirectionAngle(angle))
+        new_direction = self.direction.combine(DirectionAngle(angle*self.angle_scale))
 
         return self.change_heading_to(
             new_direction, turn_radius=turn_radius, turn_dir=TurnDir.LEFT
@@ -575,10 +575,10 @@ class Turtle:
         """
         # TODO: better treatment of unspecified angles
         if angle is None:
-            angle = cs.var(self.angle_scale * 178.1234123452345)
+            angle = cs.var(178.1234123452345)
             angle.name = "right() unknown angle"
 
-        new_direction = self.direction.combine(DirectionAngle(-angle))
+        new_direction = self.direction.combine(DirectionAngle(angle*(-self.angle_scale)))
 
         return self.change_heading_to(
             new_direction, turn_radius=turn_radius, turn_dir=TurnDir.RIGHT
@@ -606,7 +606,7 @@ class Turtle:
         """
 
         return self.change_heading_to(
-            make_direction_from_user_params(angle_or_x, y),
+            make_direction_from_user_params(angle_or_x, y, self.angle_scale),
             turn_radius=turn_radius,
             turn_dir=turn_dir,
         )
@@ -689,7 +689,7 @@ class Turtle:
             result = TArc(
                 self.position, self.direction.dir_n(), self.position, self.position, r
             )
-        self.direction = new_direction
+            self.direction = new_direction
         return result
 
     def closing_constraint(self, tangency=False):
@@ -709,7 +709,7 @@ class Turtle:
         # Tangency (if free enough)
         if tangency:
             # parallel_metric(self.heading_vector, self.first_heading_vector).make_zero()
-            self._heading_vector.be_parallel(self.first_heading_vector)
+            make_parallel(self.direction, self.first_direction)
         if not applied_constraint:
             print(
                 "Turtle warning: closing_constraint() does nothing (starting and ending points are constrained)"
