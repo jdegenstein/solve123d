@@ -42,7 +42,9 @@ with Turtle() as t:
     forward(10)
     left(90)
     forward()  # Move forward an unknown distance (the constraint solver will solve for the distance that meets constraints)
-    t.x = 33  # Constrain turtle's x coordinate to 33 (which resolves the unknown amount above)
+    be_at(
+        x=33
+    )  # Constrain turtle's x coordinate to 33 (which resolves the unknown amount above)
     heading(90)
     forward()  # Another unknown distance move
     heading(180 - 35)
@@ -52,8 +54,7 @@ with Turtle() as t:
     heading(180)
     forward(6)
     # Now at upper left corner, whose position is known
-    t.x = -8  # Two constraints for two unknown-distance moves above
-    t.y = 120
+    be_at(x=-8, y=120)
     # The upper rectangle thingy
     heading(-90)
     forward(22)

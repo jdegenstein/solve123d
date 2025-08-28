@@ -357,13 +357,15 @@ type AnyDirection = Direction | DirectionAngle | DirectionNormalized | Direction
 
 def make_direction_from_user_params(a, b, angle_scale):
     if b is None:
-        if isinstance(a, collections.abc.Sequence):
+        if isinstance(a, Direction):
+            return a
+        elif isinstance(a, collections.abc.Sequence):
             return DirectionUnnormalized(a)
         return DirectionAngle(a * angle_scale)
     return DirectionUnnormalized((a, b))
 
 
-def make_parallel(a: AnyDirection, b: AnyDirection):
+def make_parallel(a: AnyDirection, b: AnyDirection, name=None):
     if a.__class__ == Direction or b.__class__ == Direction:
         return
     if a.known() and b.known():
@@ -385,7 +387,7 @@ def make_parallel(a: AnyDirection, b: AnyDirection):
         d = a.combine(b.negate())
         # TODO: try different approaches (e.g. point to ray distance)
         (x, y) = d.dir_u()
-        wrapped_safe_atan2(y, x).make_zero("parallel vector vector")
+        wrapped_safe_atan2(y, x).make_zero(name or "parallel vector vector")
 
 
 # class DirectionKind(Enum):
@@ -827,6 +829,42 @@ class Turtle:
             # Does not work, it may be underconstrained
             # self.position=(self.position[0], cs.solve(self.position[1]))
 
+    def be_at(self, x=None, y=None):
+        """Preferred way to constrain turtle's position
+        Args:
+            x: x coordinate or position as a sequence
+            y: y coordinate
+        """
+        if isinstance(x, collections.abc.Sequence):
+            (self.position[0] - x[0]).make_zero("be_at x constraint")
+            (self.position[1] - x[1]).make_zero("be_at y constraint")
+            if self.simplify_equations:
+                self.position = tuple(x)
+            assert y is None
+        else:
+            if x is not None:
+                (self.position[0] - x).make_zero("be_at x constraint")
+            if y is not None:
+                (self.position[1] - y).make_zero("be_at y constraint")
+            if self.simplify_equations:
+                if x is not None and y is not None:
+                    self.position = (x, y)
+                elif x is not None:
+                    self.position = (x, self.position[1])
+                elif y is not None:
+                    self.position = (self.position[0], y)
+                else:
+                    print("Warning: be_at() with None for x and y")
+
+    def be_heading(self, angle_or_x_or_dir, y=None, *, name="be_heading constraint"):
+        """Preferred way to constrain turtle's heading"""
+        new_direction = make_direction_from_user_params(
+            angle_or_x_or_dir, y, self.angle_scale
+        )
+        make_parallel(new_direction, self.direction, name)
+        if self.simplify_equations:
+            self.direction = new_direction
+
 
 def teleport(x_or_pos, y=None):
     """Moves turtle to a point without creating a constraint or drawing a line"""
@@ -842,10 +880,6 @@ def forward(
     Returns:
         A line as a tuple of two points
     """
-    if dist is None:
-        dist_non_abs = cs.var(1.1239452983467823465)
-        dist_non_abs.name = "forward dist"
-        dist = wrapped_abs(dist_non_abs)
     return Turtle.top().forward(dist)
 
 
@@ -890,6 +924,16 @@ def heading(
     )
 
 
+def be_at(x=None, y=None):
+    """Preferred way to constrain turtle's position"""
+    return Turtle.top().be_at(x, y)
+
+
+def be_heading(angle_or_x_or_dir=None, y=None):
+    """Preferred way to constrain turtle's heading"""
+    return Turtle.top().be_heading(angle_or_x_or_dir, y)
+
+
 def closing_constraint(tangency=False):
     """Close the sketch by constraining the current point to the start point when the pen was first down"""
     Turtle.top().closing_constraint(tangency)
@@ -915,4 +959,6 @@ __all__ = [
     "closing_constraint",
     "pen_down",
     "pen_up",
+    "be_at",
+    "be_heading",
 ]

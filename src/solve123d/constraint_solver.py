@@ -59,7 +59,7 @@ class SolverSettings:
                         self.__dict__[k] = self.settings_metadata[k]["combine"](
                             self.__dict__[k], v
                         )
-                    except KeyError: # pragma: no cover
+                    except KeyError:  # pragma: no cover
                         pass
             else:
                 self.__dict__[k] = v
@@ -432,12 +432,18 @@ def solve_via_qr(a, b):
     def replace_small_with_one(a):
         return jax.lax.cond(jnp.abs(a) > eps, lambda a: 0.0, lambda a: 1.0, a)
 
+    def sanitize_p(a):
+        return jax.lax.cond(jnp.abs(a) > eps, lambda a: a, lambda a: 0.0, a)
+
+    p = jax.vmap(sanitize_p)(p)
+
     r_sanitizer = jax.vmap(replace_small_with_one)(jnp.diag(r))
     return jax.scipy.linalg.solve_triangular(r + jnp.diag(r_sanitizer), p)
 
 
 class SimpleSolver:
-    verbose=False
+    verbose = False
+
     def __init__(self, residual_f, jacobian_f, tolerance, max_iter=100):
         self.residual_f = _SimpleFunctionCache(residual_f)
         self.jacobian_f = _SimpleFunctionCache(jacobian_f)
@@ -447,7 +453,6 @@ class SimpleSolver:
         self.total_err = 1e20
         # self.lm_dampings = [0.5, 0.5, 0.5, 0.25, 0.125, 0]
         self.lm_dampings = []
-        
 
     def update(self, state, damping=0):
         if self.verbose:
@@ -456,27 +461,27 @@ class SimpleSolver:
         self.total_err = self.norm_f(r)
         if self.verbose:
             print(f"Solver error: {self.total_err}")
-        if jnp.isnan(self.total_err): # pragma: no cover
+        if jnp.isnan(self.total_err):  # pragma: no cover
             raise SolverError("NAN when solving!")
         if self.total_err < self.tolerance:
             return state
         j = self.jacobian_f(state)
-        if debug_nan and jnp.any(jnp.isnan(j)): # pragma: no cover
+        if debug_nan and jnp.any(jnp.isnan(j)):  # pragma: no cover
             raise SolverError("NAN when solving!")
         jtj = j.transpose() @ j
         jte = j.transpose() @ r
-        if debug_nan and jnp.any(jnp.isnan(jte)): # pragma: no cover
+        if debug_nan and jnp.any(jnp.isnan(jte)):  # pragma: no cover
             raise SolverError("NAN when solving!")
         if damping > 0:
             damped_jtj = jtj + damping * jnp.diag(jnp.diag(jtj))
         else:
             damped_jtj = jtj
-        if debug_nan and jnp.any(jnp.isnan(damped_jtj)): # pragma: no cover
+        if debug_nan and jnp.any(jnp.isnan(damped_jtj)):  # pragma: no cover
             raise SolverError("NAN when solving!")
         # delta = jax.numpy.linalg.solve(damped_jtj, jte)
         delta = solve_via_qr(damped_jtj, jte)
 
-        if debug_nan and jnp.any(jnp.isnan(delta)): # pragma: no cover
+        if debug_nan and jnp.any(jnp.isnan(delta)):  # pragma: no cover
             raise SolverError("NAN when solving!")
 
         result = state - delta
@@ -617,12 +622,14 @@ def solve_everything(
         jac = jax.jacfwd(all_constraints_function)
         fast_jac = jax.jit(jac)
         solver = SimpleSolver(fast_residual, fast_jac, 1e-12, 100)
-        solver.verbose=verbose
+        solver.verbose = verbose
         residual = solver.residual_f(params)
 
         if residuals_count < len(params):
             if verbose:
-                print(f"Under constrained: {residuals_count} constraints, {len(params)} params")
+                print(
+                    f"Under constrained: {residuals_count} constraints, {len(params)} params"
+                )
             if not solve_even_if_underconstrained:
                 print("Not solving underconstrained")
                 return

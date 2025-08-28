@@ -104,13 +104,15 @@ class TurtleTest(unittest.TestCase):
                 left(90)
                 forward()
                 t.x = 10
-                t.y = 10
+                be_at(y=10)
                 t.turn_radius = 0
                 right()  ## ends up turning it 180 degrees wrong way and walking backwards TODO: fix or output a warning when that happens
                 l = cs.absvar(1)
                 forward(l)
-                t.x = 20
-                t.y = 20
+                # For better coverage of be_at
+                t.simplify_equations = True
+                be_at((20, 20))
+                t.simplify_equations = False
                 t.turn_radius = 2
                 heading(90)  # this statement should throw because direction is variable
 
@@ -168,8 +170,13 @@ class TurtleTest(unittest.TestCase):
             left()
             forward(l)
             left(120)
-            closing_constraint(tangency=True)
+            be_heading(0)
+            # test the warning for empty be_at
+            be_at()
+            closing_constraint()
         line = t.to_build123d()
+        # for coverage
+        line_parts = [*t.to_build123d_list(ignore_errors=True, debug_objects=True)]
         face = build123d.make_face(line)
         a = face.area
         h = math.sqrt(0.75) * 10
@@ -180,7 +187,7 @@ class TurtleTest(unittest.TestCase):
         if __name__ == "__main__":  # pragma: no cover
             import ocp_vscode
 
-            ocp_vscode.show(face)
+            ocp_vscode.show(face, line_parts)
 
     def too_tall_toby(self):
         """See examples/turtle_sketching.py for better code. This does weird stuff to increase coverage"""
@@ -201,7 +208,10 @@ class TurtleTest(unittest.TestCase):
             t.turn_radius = 1e-10
             heading(0, 1)
             # can also write t.x=
-            t.x.magic = 33  # Constrain turtle's x coordinate to 33 (which resolves the unknown amount above)
+            be_at(
+                x=33
+            )  # Constrain turtle's x coordinate to 33 (which resolves the unknown amount above)
+
             t.turn_radius = 0
             forward()  # Another unknown distance move
             heading(180 - 35)
@@ -220,10 +230,11 @@ class TurtleTest(unittest.TestCase):
             # heading(180)
             heading((-1, 0))
             forward(6)
+
             # Now at upper left corner, whose position is known
-            t.x = -8  # Two constraints for two unknown-distance moves above
-            # Longer way to write a constraint
-            t.y.magic = 120
+            # Two constraints for two unknown-distance moves above
+
+            be_at(x=-8, y=120)
             # The upper rectangle thingy
             heading(-90)
             forward(22)
@@ -243,7 +254,7 @@ class TurtleTest(unittest.TestCase):
             heading(180 + (90 - 65))
             l = forward()  # Remember the line created by this forward move
             t.x = 0
-            t.y = 33
+            be_at(y=33)
             t.turn_radius = 0  # No more arcs, do sharp corners
             heading(-90)
             forward()  # Unknown distance move at the "10" constraint in the sketch right above the hole
@@ -257,7 +268,7 @@ class TurtleTest(unittest.TestCase):
             # t.turn_radius = 13  # Do the last two arcs
             # Use parameter turn_radius instead
             heading(-90, turn_radius=13)  # This adds 2nd arc from the bottom
-            t.x = 33 - 10  # Constraint needs to be done at the end of the arc
+            be_at(x=33 - 10)  # Constraint needs to be done at the end of the arc
             forward()
             heading(180 + 25, turn_radius=13)
             forward()
