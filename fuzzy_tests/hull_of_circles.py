@@ -17,7 +17,7 @@ def random_angle():
 failures = 0
 
 # currently fails on seed 56
-for i in range(102, 10000):
+for i in range(0, 10000):
     random.seed(i)
     print(f"Seed: {i}")
     r1 = 10 * random.random()
@@ -32,8 +32,6 @@ for i in range(102, 10000):
         heading(a1)
         forward(r1)
         left(90)
-        start_tangent = t._heading_vector
-        start_point = t.position
         pen_down()
 
         a2 = var(720 * random.random() - 360)

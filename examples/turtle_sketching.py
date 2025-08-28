@@ -31,10 +31,10 @@ import build123d
 import ocp_vscode
 
 cs.set_verbose(True)
-#cs.set_opportunistic(True)
+# cs.set_opportunistic(True)
 
 with Turtle() as t:
-    t.simplify_equations=False
+    t.simplify_equations = False
     pen_up()  # Disables appending of primitives (moves work the same)
     heading(270 + 25)
     forward(33 - 10)
@@ -92,6 +92,6 @@ with Turtle() as t:
     closing_constraint()  # Solve for the end point to match exactly the starting point
 
 line = t.to_build123d()
-debug=[*t.to_build123d_list(debug_objects=True)]
+debug = [*t.to_build123d_list(debug_objects=True)]
 face = build123d.make_face(line)
 ocp_vscode.show(line, build123d.Pos(0, 0, 1) * face, debug)

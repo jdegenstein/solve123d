@@ -142,6 +142,15 @@ class Variable(SolverEntity):
         Runs solver on the first call (all other variables end up solved afterwards)"""
         return self.solve()
 
+    # Arises when using turtle graphics with new variable insertion
+    @property
+    def magic(self):
+        return self
+
+    @magic.setter
+    def magic(self, v):
+        (self - v).make_zero()
+
 
 class WrappedFunction(SolverEntity):
     """Represents a function used as a geometric constraint"""
