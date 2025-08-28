@@ -617,6 +617,7 @@ def solve_everything(
         jac = jax.jacfwd(all_constraints_function)
         fast_jac = jax.jit(jac)
         solver = SimpleSolver(fast_residual, fast_jac, 1e-12, 100)
+        solver.verbose=verbose
         residual = solver.residual_f(params)
 
         if residuals_count < len(params):
@@ -626,7 +627,8 @@ def solve_everything(
 
         result_params = solver.run(params)
         residuals = solver.residual_f.cached_result
-        print(f"Residuals: {residuals}")
+        if verbose:
+            print(f"Residuals: {residuals}")
     else:
         if use_jit:
             if verbose:
@@ -655,7 +657,8 @@ def solve_everything(
             if verbose:
                 print("Computing final residuals")
             residuals = fast_residual(result_params)
-            print(f"Residuals: {residuals}")
+            if verbose:
+                print(f"Residuals: {residuals}")
         else:  # pragma: no cover
             solver = jaxopt.LevenbergMarquardt(
                 residual_fun=all_constraints_function, maxiter=30, tol=1e-15, gtol=1e-15
@@ -697,8 +700,6 @@ def solve_everything(
                 error_message += "The solver is over constrained."
             error_message += " You may need to provide initial guesses and/or remove conflicting constraints."
             raise SolverError(error_message)
-    # print(fast_residual(params))
-    # print(fast_jac(params))
 
 
 def make_constraint(f):
