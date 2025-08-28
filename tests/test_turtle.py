@@ -159,6 +159,44 @@ class TurtleTest(unittest.TestCase):
         a = face.area
         self.assertAlmostEqual(a, math.pi * 5 * 5 / 2 + 10 * 10)
 
+    def test_ignore_errors(self):
+        with Turtle() as t:
+            teleport(1, 1)
+            forward(10)
+            left(90)
+            forward(10)
+            left(90)
+            forward(10)
+            forward(0)
+            forward(1e-12)
+            left(180, turn_radius=5)
+            closing_constraint()
+        line = t.to_build123d(ignore_errors=True)
+        prims = [*t.to_build123d_list(debug_objects=True, ignore_errors=True)]
+
+        with self.assertRaises(Exception):
+            line = t.to_build123d(ignore_errors=False)
+        with self.assertRaises(Exception):
+            prims = [*t.to_build123d_list(debug_objects=False, ignore_errors=False)]
+
+        with Turtle() as t3:
+            left(180, turn_radius=1e-40)
+            left(180, turn_radius=float("nan"))
+            right(180, turn_radius=-1e40)
+            right(180, turn_radius=-20)
+            forward(1e-40)
+            left(90)
+            forward(1e40)
+        t3.primitive_list[0].end_point = (1, 0)
+
+        with self.assertRaises(Exception):
+            line = t3.to_build123d(ignore_errors=False)
+        with self.assertRaises(Exception):
+            prims = [*t3.to_build123d_list(debug_objects=True)]
+        # face = build123d.make_face(line)
+        # a = face.area
+        # self.assertAlmostEqual(a, math.pi * 5 * 5 / 2 + 10 * 10)
+
     def test_rounded_triangle(self):
         with Turtle() as t:
             t.turn_radius = 1
@@ -189,9 +227,10 @@ class TurtleTest(unittest.TestCase):
 
             ocp_vscode.show(face, line_parts)
 
-    def too_tall_toby(self):
+    def too_tall_toby(self, simplify=True):
         """See examples/turtle_sketching.py for better code. This does weird stuff to increase coverage"""
         with Turtle() as t:
+            t.simplify_equations = simplify
             pen_up()  # Disables appending of primitives (moves work the same)
             heading(270 + 25)
             forward(33 - 10)
@@ -272,9 +311,12 @@ class TurtleTest(unittest.TestCase):
             forward()
             heading(180 + 25, turn_radius=13)
             forward()
+            # Check deprecated
+            print(t.heading_vector)
             # t.turn_radius = 0  # Turn arcs off again
             closing_constraint()  # Solve for the end point to match exactly the starting point
         line = t.to_build123d()
+        prims = [*t.to_build123d_list(debug_objects=False, ignore_errors=False)]
         face = build123d.make_face(line)
         a = face.area
         self.assertAlmostEqual(
@@ -291,6 +333,7 @@ class TurtleTest(unittest.TestCase):
         cs.set_opportunistic(True)
         self.too_tall_toby()
         cs.set_opportunistic(False)
+        self.too_tall_toby(False)
 
 
 if __name__ == "__main__":  # pragma: no cover

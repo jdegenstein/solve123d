@@ -120,11 +120,12 @@ def all_values(*args):
     return True
 
 
-@cs.make_wrapper
-def parallel_metric(a, b):
-    sa = 1.0 / jnp.hypot(a[0], a[1])
-    sb = 1.0 / jnp.hypot(b[0], b[1])
-    return jnp.hypot(a[0] * sa - b[0] * sb, a[1] * sa - b[1] * sb)
+# Not good, don't use, todo: improve
+# @cs.make_wrapper
+# def parallel_metric(a, b):
+#     sa = 1.0 / jnp.hypot(a[0], a[1])
+#     sb = 1.0 / jnp.hypot(b[0], b[1])
+#     return jnp.hypot(a[0] * sa - b[0] * sb, a[1] * sa - b[1] * sb)
 
 
 # Experimental attempt to add extra variables to allow it to hop across a circle. Does not work well.
@@ -151,14 +152,6 @@ wrapped_atan2 = cs.make_wrapper(jnp.atan2)
 # Rationale: sin and cos appearing in constraint expressions are problematic for the solver
 wrapped_sin = cs.make_wrapper(jnp.sin)
 wrapped_cos = cs.make_wrapper(jnp.cos)
-
-
-def decoupled_sin(v):
-    return decouple_value(wrapped_sin(v))
-
-
-def decoupled_cos(v):
-    return decouple_value(wrapped_cos(v))
 
 
 def angle_to_dir(a):
@@ -257,7 +250,7 @@ class DirectionAngle(Direction):
     def _combine(self, other):
         if isinstance(other, DirectionAngle):
             return DirectionAngle(self.angle + other.angle)
-        if other._ORDER > 1:
+        if other._ORDER > 1:  # pragma: no branch
             return DirectionNormalized(self.dir_n())._combine(other)
 
 
@@ -286,7 +279,8 @@ class DirectionNormalized(Direction):
             return DirectionUnnormalized(rotate(self.direction, other.direction))
         if isinstance(other, DirectionDiff):
             return DirectionUnnormalized(rotate(self.direction, other.dir_u()))
-        assert False
+        else:  # pragma: no cover
+            assert False
 
 
 class DirectionUnnormalized(Direction):
@@ -319,7 +313,8 @@ class DirectionUnnormalized(Direction):
                 "Product of unnormalized direction and difference direction. Solver might benefit from normalization"
             )
             return DirectionUnnormalized(rotate(self.direction, other.dir_u()))
-        assert False
+        else:  # pragma: no cover
+            assert False
 
 
 class DirectionDiff(Direction):
@@ -346,7 +341,7 @@ class DirectionDiff(Direction):
         )
 
     def _combine(self, other):
-        if isinstance(other, DirectionDiff):
+        if isinstance(other, DirectionDiff):  # pragma: no branch
             print(
                 "Product of difference direction and difference direction. Solver might benefit from normalization"
             )
@@ -496,7 +491,7 @@ class Turtle:
         if self.direction.known():
             new_pos = add(self.position, vec_scale(self.direction.dir_n(), dist))
         else:
-            if self.direction.__class__ == Direction:
+            if self.direction.__class__ == Direction:  # pragma: no cover
                 # This probably shouldn't happen.
                 # TODO: mark new_pos for randomization in the solver
                 # TODO: re-initial-value new_pos to the position of the next thing user gives us?
@@ -764,7 +759,7 @@ class Turtle:
                         arc_start.name = f"a{i} start"
                         yield arc_start
                 except Exception:
-                    if not ignore_errors:
+                    if not ignore_errors:  # pragma: no cover
                         raise
             else:  # pragma: no cover
                 raise RuntimeError("Unsupported primitive for build123d")
@@ -788,7 +783,7 @@ class Turtle:
                             cs.unjax(cs.solve(p.end_point)),
                             tangent=cs.unjax(cs.solve(p.tangent_at_start)),
                         ).name = f"a{i}"
-                    except Exception:
+                    except Exception:  # pragma: no cover
                         if not ignore_errors:
                             raise
                 else:  # pragma: no cover

@@ -79,10 +79,12 @@ class LowLevelTurtleTest(unittest.TestCase):
         b = math.radians(13)
         c = math.radians(17)
         d = math.radians(27)
+
+        sc, cc = turtle.solver_sincos(c)
         to_test = (
             turtle.DirectionAngle(a),
             turtle.DirectionNormalized((math.cos(b), math.sin(b))),
-            turtle.DirectionUnnormalized((math.cos(c) * 2, math.sin(c) * 2)),
+            turtle.DirectionUnnormalized((cc * 2, sc * 2)),
             turtle.DirectionDiff(((2, 3), (2 + math.cos(d) * 2, 3 + math.sin(d) * 2))),
         )
         angles = (a, b, c, d)
@@ -128,6 +130,7 @@ class LowLevelTurtleTest(unittest.TestCase):
         u1 = turtle.Direction()
         u2 = turtle.Direction()
         self.assertTrue(u1.combine(u2).__class__ is turtle.Direction)
+        self.assertTrue(u1.negate().__class__ is turtle.Direction)
 
     def test_make_direction(self):
         a = turtle.make_direction_from_user_params(0.5, math.sqrt(0.75), 0)
@@ -144,7 +147,16 @@ class LowLevelTurtleTest(unittest.TestCase):
             turtle.Direction,
         )
 
+    def test_unspecified_dir(self):
+        # To provide coverage
+        with turtle.Turtle() as t:
+            t.direction = turtle.Direction()
+            t.forward(1)
+            self.assertFalse(t.direction.known())
+            self.assertIsInstance(t.direction, turtle.DirectionDiff)
+
     def test_make_parallel(self):
+
         vec1 = cs.var(turtle.angle_to_dir(1.2))
         (vec1[0] ** 2 + vec1[1] ** 2 - 1.0).make_zero()
         vec2 = cs.var(turtle.angle_to_dir(1.7))
@@ -158,6 +170,9 @@ class LowLevelTurtleTest(unittest.TestCase):
             turtle.DirectionDiff(((2, 3), (2 + vec3[0], 3 + vec3[1]))),
         )
 
+        # also test decoupling
+        a2 = turtle.decouple_value(to_test[0].angle)
+
         for i, x in enumerate(to_test):
             self.assertFalse(x.known())
             for j, y in enumerate(to_test):
@@ -168,6 +183,12 @@ class LowLevelTurtleTest(unittest.TestCase):
                 self.assertAlmostEqual(
                     turtle.angle_error(*cs.solve(x.dir_n(), y.dir_n())), 0.0
                 )
+        self.assertAlmostEqual(cs.solve(a2), cs.solve(to_test[0].angle))
+        a3 = turtle.decouple_value(to_test[0].angle)
+        self.assertAlmostEqual(cs.solve(a3), cs.solve(to_test[0].angle))
+
+    def test_decouple_value(self):
+        self.assertEqual(turtle.decouple_value(1.23), 1.23)
 
 
 if __name__ == "__main__":  # pragma: no cover
