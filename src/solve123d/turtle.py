@@ -689,7 +689,7 @@ class Turtle:
             result = TArc(
                 self.position, self.direction.dir_n(), self.position, self.position, r
             )
-        self.direction = new_direction
+            self.direction = new_direction
         return result
 
     def closing_constraint(self, tangency=False):
