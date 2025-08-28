@@ -89,6 +89,7 @@ class LowLevelTurtleTest(unittest.TestCase):
         for i, x in enumerate(to_test):
             self.assertTrue(x.known())
             cmp = turtle.DirectionAngle(angles[i])
+            self.assertIs(turtle.make_direction_from_user_params(x, None, None), x)
             self.assertAlmostEqual(turtle.angle_error(x.dir_n(), cmp.dir_n()), 0.0)
             for j, y in enumerate(to_test):
                 combined = x.combine(y)
@@ -114,12 +115,15 @@ class LowLevelTurtleTest(unittest.TestCase):
                 self.assertAlmostEqual(
                     turtle.angle_error(combined.dir_u(), compare.dir_n()), 0.0
                 )
+                with self.assertRaises(ValueError):
+                    turtle.make_parallel(x, y)
 
         for x in to_test:
             with self.assertRaises(ValueError):
                 blah = x.combine(turtle.Direction())
             with self.assertRaises(ValueError):
                 blah = turtle.Direction().combine(x)
+            turtle.make_parallel(x, turtle.Direction())
 
         u1 = turtle.Direction()
         u2 = turtle.Direction()
@@ -133,6 +137,12 @@ class LowLevelTurtleTest(unittest.TestCase):
         )
         self.assertAlmostEqual(turtle.angle_error(a.dir_n(), b.dir_n()), 0.0)
         self.assertAlmostEqual(turtle.angle_error(a.dir_n(), c.dir_n()), 0.0)
+        self.assertIs(
+            turtle.make_direction_from_user_params(
+                turtle.Direction(), None, None
+            ).__class__,
+            turtle.Direction,
+        )
 
     def test_make_parallel(self):
         vec1 = cs.var(turtle.angle_to_dir(1.2))
