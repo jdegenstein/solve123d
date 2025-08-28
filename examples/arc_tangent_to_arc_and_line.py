@@ -42,17 +42,17 @@ with Turtle() as t:
     left(90)
     pen_down()
     forward(5 - 1)
-    left(turn_radius=2)
+    left(turn_radius=2) # unknown 1
     # provide initial guess
-    forward(cs.var(6))
-    arc = left(cs.var(90), turn_radius=1.4)
-    arc.center[0].magic = 7.8
-    arc.center[1].magic = 4.8
-    right(cs.var(90), turn_radius=3)
-    t.y = 2 + 1
-    forward()
-    t.x = 0
-    t.y = 2 + 1
+    forward(cs.var(6)) # unknown 2
+    arc = left(cs.var(90), turn_radius=1.4) # unknown 3
+    (arc.center[0]-7.8).make_zero("custom - arc center x")
+    (arc.center[1]-4.8).make_zero("custom - arc center y")
+    right(cs.var(90), turn_radius=3) #unknown 4
+    (t.y - (2 + 1)).make_zero("custom - penultimate y")
+    forward() # unknown 5
+    (t.x - 0).make_zero("custom - end x")
+    (t.y- (2 + 1)).make_zero("custom - end y")
 line = t.to_build123d()
 # line += Rot(0, 0, 180) * line
 ocp_vscode.show(line)

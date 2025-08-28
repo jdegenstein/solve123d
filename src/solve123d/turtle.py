@@ -856,9 +856,6 @@ def left(angle=None, *, turn_radius=None) -> TArc:
     Returns:
         An arc (possibly zero-radius) which you can use in constraints
     """
-    if angle is None:
-        angle = cs.var(0.99 * math.pi / Turtle.top().angle_scale)
-        angle.name = "left turn angle"
     return Turtle.top().left(angle, turn_radius=turn_radius)
 
 
@@ -870,9 +867,6 @@ def right(angle=None, *, turn_radius=None) -> TArc:
     Returns:
         An arc (possibly zero-radius) which you can use in constraints
     """
-    if angle is None:
-        angle = cs.var(0.99 * math.pi / Turtle.top().angle_scale)
-        angle.name = "right turn angle"
     return Turtle.top().right(angle, turn_radius=turn_radius)
 
 

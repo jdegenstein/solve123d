@@ -563,6 +563,10 @@ def solve_everything(
     for v in all_variables:
         variable_indices[v] = cur_index
         cur_index += 1
+    if verbose:
+        print("Constraints:")
+        for c in all_constraints:
+            print(f"\t{c.name}")
 
     params = jnp.array([v.initial_value for v in all_variables], dtype=jnp.float64)
 
