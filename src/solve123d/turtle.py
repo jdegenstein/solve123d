@@ -26,6 +26,7 @@ license:
 
 import copy
 from enum import Enum
+from warnings import warn
 import collections
 import solve123d as cs
 import jax
@@ -722,7 +723,7 @@ class Turtle:
         for p in self.primitive_list:
             p.debug_print()
 
-    def to_build123d_list(self, ignore_errors=False, debug_objects=True):
+    def to_build123d_list(self, ignore_errors=False, debug_objects=False):
         """Iterable list of build123d objects"""
         for i, p in enumerate(self.primitive_list):
             if isinstance(p, Line):
@@ -732,7 +733,7 @@ class Turtle:
                     line = build123d.Line(p0, p1)
                     line.name = f"l{i}"
                     yield line
-                except:
+                except Exception:
                     if not ignore_errors:
                         raise
             elif isinstance(p, TArc):
@@ -762,7 +763,7 @@ class Turtle:
                         arc_start.color = "red"
                         arc_start.name = f"a{i} start"
                         yield arc_start
-                except:
+                except Exception:
                     if not ignore_errors:
                         raise
             else:  # pragma: no cover
@@ -777,7 +778,7 @@ class Turtle:
                     p1 = cs.unjax(cs.solve(p.points[1]))
                     try:
                         build123d.Line(p0, p1).name = f"l{i}"
-                    except:
+                    except Exception:
                         if not ignore_errors:
                             raise
                 elif isinstance(p, TArc):
@@ -787,7 +788,7 @@ class Turtle:
                             cs.unjax(cs.solve(p.end_point)),
                             tangent=cs.unjax(cs.solve(p.tangent_at_start)),
                         ).name = f"a{i}"
-                    except:
+                    except Exception:
                         if not ignore_errors:
                             raise
                 else:  # pragma: no cover
@@ -854,7 +855,7 @@ class Turtle:
                 elif y is not None:
                     self.position = (self.position[0], y)
                 else:
-                    print("Warning: be_at() with None for x and y")
+                    warn("be_at() with None for x and y")
 
     def be_heading(self, angle_or_x_or_dir, y=None, *, name="be_heading constraint"):
         """Preferred way to constrain turtle's heading"""
@@ -864,6 +865,15 @@ class Turtle:
         make_parallel(new_direction, self.direction, name)
         if self.simplify_equations:
             self.direction = new_direction
+
+    @property
+    def heading_vector(self):
+        """Deprecated: turtle's direction as normalized vector"""
+        warn(
+            "Property Turtle.heading_vector is deprecated. "
+            "Please update your code to use Turtle.be_heading and/or Turtle.direction"
+        )
+        return self.direction.dir_n()
 
 
 def teleport(x_or_pos, y=None):
