@@ -235,6 +235,8 @@ class DirectionAngle(Direction):
 
     def __init__(self, a):
         self.angle = a
+        if a<-2.0*math.pi or a>2.0*math.pi:
+            print("Suspicious angle in radians: {a}")
 
     def known(self):
         return all_values(self.angle)
@@ -590,8 +592,7 @@ class Turtle:
         y=None,
         *,
         turn_radius=None,
-        turn_dir: TurnDir = TurnDir.AUTO,
-        angle_is_unimportant=False,
+        turn_dir: TurnDir = TurnDir.AUTO
     ) -> TArc:
         """Turn the turtle to point in a desired direction
         Args:
@@ -632,7 +633,7 @@ class Turtle:
         if isinstance(r, (cs.WrappedFunction, cs.Variable, jax.Array)) or r != 0:
             if turn_dir == TurnDir.AUTO:
                 if self.direction.known() and new_direction.known():
-                    if new_direction.combine(self.direction).dir_u()[1] > 0:
+                    if new_direction.combine(self.direction.negate()).dir_u()[1] > 0:
                         turn_dir = TurnDir.LEFT
                     else:
                         turn_dir = TurnDir.RIGHT
@@ -650,26 +651,27 @@ class Turtle:
             if self.is_down:
                 if self.first_direction is None:
                     self.first_direction = self.direction
-                    self.first_position = self.position
-
+                    self.first_position = self.position            
+            
+            api_90_deg=0.5*math.pi/self.angle_scale
             if turn_dir == TurnDir.LEFT:
-                self.left(90, turn_radius=0)
+                self.left(api_90_deg, turn_radius=0)
                 self.forward(r, draw_line=False)
                 center = self.position
                 self.change_heading_to(
-                    new_direction.combine(DirectionAngle(-90)), turn_radius=0
+                    new_direction.combine(DirectionAngle(-0.5*math.pi)), turn_radius=0
                 )
                 self.forward(r, draw_line=False)
-                left(90, turn_radius=0)
+                left(api_90_deg, turn_radius=0)
             else:
-                self.right(90, turn_radius=0)
+                self.right(api_90_deg, turn_radius=0)
                 self.forward(r, draw_line=False)
                 center = self.position
                 self.change_heading_to(
-                    new_direction.combine(DirectionAngle(90)), turn_radius=0
+                    new_direction.combine(DirectionAngle(0.5*math.pi)), turn_radius=0
                 )
                 self.forward(r, draw_line=False)
-                self.right(90, turn_radius=0)
+                self.right(api_90_deg, turn_radius=0)
 
             # center_offset = rotate(self._heading_vector.get_scaled_dir(r), (0, d))
 
