@@ -36,6 +36,18 @@ def unwrap(f):
 
 class SolvingTest(unittest.TestCase):
 
+    def test_branch_coverage_settings(self):
+        a = cs.var(1)
+        b = cs.var(1)
+        c = cs.var(1)
+        a.settings = cs.SolverSettings(verbose=True)
+        b.settings = cs.SolverSettings(verbose=True)
+        c.settings = cs.SolverSettings(verbose=True)
+        (a + b + c).make_zero()
+        (a + b).make_zero()
+        (a + c).make_zero()
+        self.assertAlmostEqual(cs.solve(a + c), 0.0)
+
     def test_conversion(self):
         a = cs.var(0)
         a.solution = jax.numpy.array(1.0)
@@ -115,30 +127,39 @@ class SolvingTest(unittest.TestCase):
         cs.set_verbose(False)
 
     def test_magic(self):
-        a = cs.Variable(1.2345)
-        b = cs.var(1.2345)
-        self.assertEqual(
-            (2.0 - a * 3.0 + b).initial_value,
-            2.0 - a.initial_value * 3.0 + b.initial_value,
-        )
+        try:
+            cs.set_verbose(False)
+            a = cs.Variable(1.2345)
+            b = cs.var(1.2345)
+            f = 2.0 - a * 3.0 + b
+            self.assertEqual(
+                f.initial_value,
+                2.0 - a.initial_value * 3.0 + b.initial_value,
+            )
+            self.assertEqual(
+                f.initial_value,
+                (2.0 - a * 3.0).initial_value + b.initial_value,
+            )
 
-        cs.magic.zero = 2.0 - a * 3.0 + b
-        (a - b * 2.0).magic = -1
+            cs.magic.zero = 2.0 - a * 3.0 + b
+            (a - b * 2.0).magic = -1
 
-        self.assertEqual(cs.get_initial_value(2.0, a), (2.0, a.initial_value))
+            self.assertEqual(cs.get_initial_value(2.0, a), (2.0, a.initial_value))
 
-        test = cs.solve((2.0 - a * 3.0 + b).magic, a - b * 2.0 + 1.0)
+            test = cs.solve((2.0 - a * 3.0 + b).magic, a - b * 2.0 + 1.0)
 
-        # self.assertTrue(isinstance(test[0], float))
+            # self.assertTrue(isinstance(test[0], float))
 
-        self.assertAlmostEqual(test[0], 0)
-        self.assertAlmostEqual(test[1], 0)
-        self.assertAlmostEqual(2.0 - a.s * 3.0 + b.s, 0)
-        self.assertAlmostEqual(a.s - b.s * 2.0 + 1.0, 0)
-        c = cs.var(2)
-        c.magic = 1
-        self.assertAlmostEqual(cs.solve(c), 1)
-        self.assertAlmostEqual(cs.solve(c.magic), 1)
+            self.assertAlmostEqual(test[0], 0)
+            self.assertAlmostEqual(test[1], 0)
+            self.assertAlmostEqual(2.0 - a.s * 3.0 + b.s, 0)
+            self.assertAlmostEqual(a.s - b.s * 2.0 + 1.0, 0)
+            c = cs.var(2)
+            c.magic = 1
+            self.assertAlmostEqual(cs.solve(c), 1)
+            self.assertAlmostEqual(cs.solve(c.magic), 1)
+        finally:
+            cs.set_verbose(True)
 
     def test_overconstrained_except(self):
         # Inapplicable to opportunistic solver

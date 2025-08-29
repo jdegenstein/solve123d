@@ -589,15 +589,13 @@ def solve_everything(
 
     params = jnp.array([v.initial_value for v in all_variables], dtype=jnp.float64)
 
-    residuals_count = 0
-
     # Make one function to solve, out of all known constraints
     def all_constraints_function(input_state):
-        nonlocal residuals_count
         global _results_cache
         if verbose:
             print("running original all_constraints_function")
         _results_cache = {}
+
         def concatenate_inner():
             for c in all_constraints:
                 args = c.arguments
@@ -618,12 +616,12 @@ def solve_everything(
         fast_jac = jax.jit(jac)
         solver = SimpleSolver(fast_residual, fast_jac, 1e-12, 100)
         solver.verbose = verbose
-        residual = solver.residual_f(params)
+        residuals = solver.residual_f(params)
 
-        if residuals_count < len(params):
-            if verbose:
+        if len(residuals) < len(params):
+            if verbose:  # pragma: no branch
                 print(
-                    f"Under constrained: {residuals_count} constraints, {len(params)} params"
+                    f"Under constrained: {len(residuals)} constraints, {len(params)} params"
                 )
             if not solve_even_if_underconstrained:
                 print("Not solving underconstrained")
@@ -670,12 +668,12 @@ def solve_everything(
             result_params, _ = solver.run(params)
             residuals = all_constraints_function(result_params)
 
-        if residuals_count < len(params):
+        if len(residuals) < len(params):
             if not solve_even_if_underconstrained:
                 print("Not solving underconstrained")
                 return
             print(
-                f"Under constrained: {len(params)} degrees of freedom but only {residuals_count} constraints"
+                f"Under constrained: {len(params)} degrees of freedom but only {len(residuals)} constraints"
             )
 
     for v in all_variables:
@@ -685,9 +683,9 @@ def solve_everything(
         if verbose:
             print(f"Var {v.name}: solution:{v.solution}")
 
-    if residuals_count > len(params):
+    if len(residuals) > len(params):
         print(
-            f"Over or redundantly constrained: {len(params)} degrees of freedom and {residuals_count} constraints"
+            f"Over or redundantly constrained: {len(params)} degrees of freedom and {len(residuals)} constraints"
         )
 
     if verbose:
@@ -695,12 +693,12 @@ def solve_everything(
 
     # Raise at the end so that all verbose prints complete
     total_error = jnp.linalg.norm(residuals)
-    if settings.max_tolerance is not None:
+    if settings.max_tolerance is not None:  # pragma: no branch
         if total_error > settings.max_tolerance:
             error_message = (
                 f"Solver failed to converge with total error {total_error}. "
             )
-            if residuals_count > len(params):
+            if len(residuals) > len(params):  # pragma: no branch
                 error_message += "The solver is over constrained."
             error_message += " You may need to provide initial guesses and/or remove conflicting constraints."
             raise SolverError(error_message)
