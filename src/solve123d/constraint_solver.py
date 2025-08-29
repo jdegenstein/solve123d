@@ -144,7 +144,7 @@ class Variable(SolverEntity):
 
     # Arises when using turtle graphics with new variable insertion
     @property
-    def magic(self):
+    def magic(self):  # pragma: no cover
         return self
 
     @magic.setter
@@ -443,6 +443,7 @@ def solve_via_qr(a, b):
 
 class SimpleSolver:
     verbose = False
+    lm_dampings = []
 
     def __init__(self, residual_f, jacobian_f, tolerance, max_iter=100):
         self.residual_f = _SimpleFunctionCache(residual_f)
@@ -452,7 +453,6 @@ class SimpleSolver:
         self.max_iter = max_iter
         self.total_err = 1e20
         # self.lm_dampings = [0.5, 0.5, 0.5, 0.25, 0.125, 0]
-        self.lm_dampings = []
 
     def update(self, state, damping=0):
         if self.verbose:
@@ -598,24 +598,19 @@ def solve_everything(
         if verbose:
             print("running original all_constraints_function")
         _results_cache = {}
-        # Todo: create jnp.array directly
-        result = []
-        for c in all_constraints:
-            args = c.arguments
-            # if verbose:
-            #    print(f"Constraint {c} with arguments {args}")
-            args_copy = _recursive_substitute(args, input_state, variable_indices)
-            # r=c.function(*(input_state[variable_indices[v]] for v in c.arguments))
-            r = c.function(*args_copy)
-            # print(r)
-            if is_iterable(r):
-                result += r
-            else:
-                result.append(r)
-        residuals_count = len(result)
-        jax_result = jnp.array(result)
+        def concatenate_inner():
+            for c in all_constraints:
+                args = c.arguments
+                # if verbose:
+                #    print(f"Constraint {c} with arguments {args}")
+                args_copy = _recursive_substitute(args, input_state, variable_indices)
+                # r=c.function(*(input_state[variable_indices[v]] for v in c.arguments))
+                yield c.function(*args_copy)
+
+        a = [*concatenate_inner()]
+        result = jnp.hstack(a, dtype=jnp.float64)
         _results_cache = {}
-        return jax_result
+        return result
 
     if use_custom_solver:
         fast_residual = jax.jit(all_constraints_function)
@@ -638,7 +633,7 @@ def solve_everything(
         residuals = solver.residual_f.cached_result
         if verbose:
             print(f"Residuals: {residuals}")
-    else:
+    else:  # pragma: no cover ## Todo: delete this branch altogether, jaxopt is slow
         if use_jit:
             if verbose:
                 print("Starting jit compile")
@@ -675,13 +670,13 @@ def solve_everything(
             result_params, _ = solver.run(params)
             residuals = all_constraints_function(result_params)
 
-    if residuals_count < len(params):
-        if not solve_even_if_underconstrained:
-            print("Not solving underconstrained")
-            return
-        print(
-            f"Under constrained: {len(params)} degrees of freedom but only {residuals_count} constraints"
-        )
+        if residuals_count < len(params):
+            if not solve_even_if_underconstrained:
+                print("Not solving underconstrained")
+                return
+            print(
+                f"Under constrained: {len(params)} degrees of freedom but only {residuals_count} constraints"
+            )
 
     for v in all_variables:
         # If we want to deal with jax.Array values

@@ -820,7 +820,7 @@ class Turtle:
     @y.setter
     def y(self, value):
         cs.magic.zero = self.position[1] - value
-        if self.simplify_equations:#pragma: no branch
+        if self.simplify_equations:  # pragma: no branch
             self.position = (self.position[0], value)
             # Does not work, it may be underconstrained
             # self.position=(self.position[0], cs.solve(self.position[1]))
@@ -834,7 +834,7 @@ class Turtle:
         if isinstance(x, collections.abc.Sequence):
             (self.position[0] - x[0]).make_zero("be_at x constraint")
             (self.position[1] - x[1]).make_zero("be_at y constraint")
-            if self.simplify_equations:#pragma: no branch
+            if self.simplify_equations:  # pragma: no branch
                 self.position = tuple(x)
             assert y is None
         else:
@@ -858,7 +858,7 @@ class Turtle:
             angle_or_x_or_dir, y, self.angle_scale
         )
         make_parallel(new_direction, self.direction, name)
-        if self.simplify_equations: #pragma: no branch
+        if self.simplify_equations:  # pragma: no branch
             self.direction = new_direction
 
     @property
