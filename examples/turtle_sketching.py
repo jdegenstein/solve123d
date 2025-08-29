@@ -31,9 +31,10 @@ import build123d
 import ocp_vscode
 
 cs.set_verbose(True)
-cs.set_opportunistic(True)
+# cs.set_opportunistic(True)
 
 with Turtle() as t:
+    t.simplify_equations = False
     pen_up()  # Disables appending of primitives (moves work the same)
     heading(270 + 25)
     forward(33 - 10)
@@ -41,7 +42,9 @@ with Turtle() as t:
     forward(10)
     left(90)
     forward()  # Move forward an unknown distance (the constraint solver will solve for the distance that meets constraints)
-    t.x = 33  # Constrain turtle's x coordinate to 33 (which resolves the unknown amount above)
+    be_at(
+        x=33
+    )  # Constrain turtle's x coordinate to 33 (which resolves the unknown amount above)
     heading(90)
     forward()  # Another unknown distance move
     heading(180 - 35)
@@ -51,8 +54,7 @@ with Turtle() as t:
     heading(180)
     forward(6)
     # Now at upper left corner, whose position is known
-    t.x = -8  # Two constraints for two unknown-distance moves above
-    t.y = 120
+    be_at(x=-8, y=120)
     # The upper rectangle thingy
     heading(-90)
     forward(22)
@@ -91,5 +93,6 @@ with Turtle() as t:
     closing_constraint()  # Solve for the end point to match exactly the starting point
 
 line = t.to_build123d()
+debug = [*t.to_build123d_list(debug_objects=True)]
 face = build123d.make_face(line)
-ocp_vscode.show(line, build123d.Pos(0, 0, 1) * face)
+ocp_vscode.show(line, build123d.Pos(0, 0, 1) * face, debug)
