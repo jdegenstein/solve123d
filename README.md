@@ -8,7 +8,7 @@ pip install git+https://gitlab.com/dmytrylk/solve123d.git
 
 ## Compute values backwards from equations
 
-You create a set of variables and impose constraints on them, then call solve() to obtain a solution. 
+Similarly to sympy, you create a set of variables and a system of equations involving said variables, then call solve() on individual variables to obtain values that satisfy the system of equations. 
 
 Example:
 ```py
@@ -17,13 +17,21 @@ a = cs.var(1.2345) # 1.2345 is the initial guess
 b = cs.var(1.2345)
 cs.magic.zero = 2.0 - a * 3.0 + b
 cs.magic.zero = a - b * 2.0 + 1.0
-print(cs.solve(a)) # Will print solution for a
-print(cs.solve(b)) # Will print solution for b (solution is calculated on the previous line and cached)
-print(cs.solve(3.0 - a * 3.0 + b)) # You can solve for the value of an expression involving unknowns, too.
+print(cs.solve(a)) # Will print solution for a (solution for b is also calculated here)
+print(cs.solve(b)) # Will print solution for b (calculated on the previous line)
+print(cs.solve(3.0 - a * 3.0 + b)) # Will use solutions for a and b from the above to calculate an expression, and output its value.
 ```
-Expressions and the graph of variables interconnected by constraints are traced transparently behind the scenes, and the solution can be accessed through the variables you declared, rather than by indexing into large array.
 
-This greatly simplifies use of equation solver in regular code.
+However, there are some some important differences for ease of use in the context of code CAD.
+
+*   Initial guess is provided in the variable, simplifying declarations.
+*   Equations (constraints) are created separately from one another.
+*   Solutions are accessed through the variable (rather than from an array of dictionaries).
+*   A numerical solver is used (algebraic solver would be brittle for CAD use).
+
+Internally, each variable keeps track of all equations it appears in, and each equation keeps track of all the variables involved in it. When you solve for value of one variable, the solver walks the interconnected graph of variables and equations, and solves all of the variables necessary (and caches the solutions, so that subsequent requests for solution on other variables are free).
+
+This greatly simplifies generation of systems of equations, such as those relevant to computer aided design.
 
 If multiple solutions exist you may end up with not the solution you're looking for; if the system is overconstrained, you get least-squares solution.
 
