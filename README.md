@@ -8,7 +8,7 @@ pip install git+https://gitlab.com/dmytrylk/solve123d.git
 
 ## Compute values backwards from equations
 
-Similarly to sympy, you create a set of variables and a system of equations involving said variables, then call solve() on individual variables to obtain values that satisfy the system of equations. 
+Similarly to SymPy, you create a set of variables and a system of equations involving said variables, then call solve() to obtain values that satisfy the system of equations. 
 
 Example:
 ```py
@@ -22,14 +22,17 @@ print(cs.solve(b)) # Will print solution for b (calculated on the previous line)
 print(cs.solve(3.0 - a * 3.0 + b)) # Will use solutions for a and b from the above to calculate an expression, and output its value.
 ```
 
-However, there are some some important differences for ease of use in the context of code CAD.
+However, there are some some important differences from SymPy for ease of use in the context of code CAD.
 
-*   Initial guess is provided in the variable, simplifying declarations.
-*   Equations (constraints) are created separately from one another.
+*   Initial guess is provided with the variable, simplifying declarations.
+*   Graph traversal is used to organize variables and equations into a system of equations.
+*   You don't have to keep (and pass around, and concatenate) lists of equations - it is automatic.
 *   Solutions are accessed through the variable (rather than from an array of dictionaries).
 *   A numerical solver is used (algebraic solver would be brittle for CAD use).
 
-Internally, each variable keeps track of all equations it appears in, and each equation keeps track of all the variables involved in it. When you solve for value of one variable, the solver walks the interconnected graph of variables and equations, and solves all of the variables necessary (and caches the solutions, so that subsequent requests for solution on other variables are free).
+Internally, each variable keeps track of all equations it appears in, and each equation keeps track of all the variables involved in it. There is no single global registry of variables and equations.
+
+When you solve for value of one variable, the solver traverses the interconnected graph of variables and equations, and solves all of the variables necessary (and caches the solutions, so that subsequent requests for solution on other variables are free).
 
 This greatly simplifies generation of systems of equations, such as those relevant to computer aided design.
 
