@@ -27,7 +27,7 @@ license:
 import unittest
 import math
 import solve123d as cs
-import jax
+import numpy as np
 
 
 def unwrap(f):
@@ -50,7 +50,7 @@ class SolvingTest(unittest.TestCase):
 
     def test_conversion(self):
         a = cs.var(0)
-        a.solution = jax.numpy.array(1.0)
+        a.solution = np.array(1.0)
         b = a.solution_as_float_or_none()
         c = a.solve()
         self.assertEqual(b, 1.0)

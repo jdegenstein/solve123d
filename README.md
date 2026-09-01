@@ -1,10 +1,10 @@
 # Extremely basic geometric constraint solver
 
-Meant for use with build123d. The project is in very early stage and constraints api is likely to change a lot. 
+This is a fork of the original repo from gitlab at https://gitlab.com/dmytrylk/solve123d . Meant for use with build123d. The project is in very early stage and constraints api is likely to change a lot. 
 
-## Installation
+## Installation (this fork)
 
-pip install git+https://gitlab.com/dmytrylk/solve123d.git
+pip install git+https://github.com/jdegenstein/solve123d
 
 ## Compute values backwards from equations
 

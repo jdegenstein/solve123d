@@ -30,12 +30,6 @@ import solve123d as cs
 import solve123d.turtle as turtle
 import build123d
 
-import jax
-import jax.numpy as jnp
-
-#
-# jax.config.update("jax_debug_nans", True)
-
 cs.set_verbose(True)
 
 # cs.set_opportunistic(True)

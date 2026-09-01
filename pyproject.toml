@@ -1,11 +1,9 @@
 [build-system]
-
 requires = [
     "setuptools>=45",
     "wheel",
     "setuptools_scm[toml]>=6.2",
 ]
-
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -16,13 +14,13 @@ authors = [
 ]
 description = "A python library for CAD geometric constraints"
 readme = "README.md"
-requires-python = ">= 3.10, < 3.14"
+requires-python = ">= 3.10, < 3.15"
 keywords = [
     "3d models",
     "3d printing",
-    "3d",    
+    "3d",
     "cad",
-    "cadquery",    
+    "cadquery",
     "python",
 ]
 license = {text = "Apache-2.0"}
@@ -31,11 +29,9 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
 ]
-
 dependencies = [
-    "jax",
-    "jaxopt",
-    "build123d"
+    "numpy",
+    "build123d",
 ]
 
 [project.urls]
@@ -65,12 +61,13 @@ docs = [
 ]
 
 # all dependencies
-all = [    
+all = [
     "solve123d[development]",
-    "solve123d[docs]"    
+    "solve123d[docs]",
 ]
+
 test = [
-    "solve123d[development]"
+    "solve123d[development]",
 ]
 
 [tool.setuptools.packages.find]
@@ -96,7 +93,6 @@ env_list = ["3.13", "3.12", "type"]
 allowlist_externals = ["pytest"]
 description = "Run test under {base_python}"
 commands = [["pytest"]]
-# commands = [["python", "-m", "pytest"]]
 
 [tool.tox.env.type]
 description = "run type check on code base"
