@@ -300,6 +300,15 @@ class DirectionDiff(Direction):
             return DirectionUnnormalized(rotate(self.dir_u(), other.dir_u()))
 
 
+AnyDirection: TypeAlias = (
+    Direction
+    | DirectionAngle
+    | DirectionNormalized
+    | DirectionUnnormalized
+    | DirectionDiff
+)
+
+
 def make_direction_from_user_params(a, b, angle_scale):
     if b is None:
         if isinstance(a, Direction):
