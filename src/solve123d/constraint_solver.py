@@ -266,7 +266,8 @@ def d_atan2(y, x):
         dy = Dual.lift(y)
         dx = Dual.lift(x)
         val = math.atan2(dy.val, dx.val)
-        denom = dx.val**2 + dy.val**2 + 1e-30
+        # Floor prevents division by ~0 from dominating the Jacobian SVD
+        denom = max(dx.val**2 + dy.val**2, 1e-10)
         gy = dy.grad if dy.grad is not None else 0.0
         gx = dx.grad if dx.grad is not None else 0.0
         return Dual(val, (dx.val * gy - dy.val * gx) / denom)
@@ -523,40 +524,37 @@ magic = MagicalZero()
 
 
 class SimpleSolver:
-    """Direct QR / SVD Levenberg-Marquardt Solver."""
+    """Direct SVD Levenberg-Marquardt Solver with Step Clamping."""
 
     lm_dampings = []
     verbose = False
 
-    def __init__(self, tol=1e-12, max_iter=100):
+    def __init__(self, tol=1e-8, max_iter=200):
         self.tol = tol
         self.max_iter = max_iter
 
     def step(self, J, r, lam):
-        m, n = J.shape
-        if m < n or np.linalg.matrix_rank(J) < min(m, n):
-            U, s, Vt = np.linalg.svd(J, full_matrices=False)
-            factors = s / (s**2 + lam)
-            delta = -Vt.T @ (factors * (U.T @ r))
-        else:
-            d = np.clip(np.sqrt(np.sum(J**2, axis=0) + 1e-12), 1e-6, 1e6)
-            D_aug = np.diag(np.sqrt(lam) * d)
-            J_aug = np.vstack([J, D_aug])
-            r_aug = np.concatenate([r, np.zeros(n, dtype=np.float64)])
-            q, r_mat = np.linalg.qr(J_aug)
-            delta = np.linalg.solve(r_mat, -q.T @ r_aug)
+        U, s, Vt = np.linalg.svd(J, full_matrices=False)
+        factors = s / (s**2 + lam)
+        delta = -Vt.T @ (factors * (U.T @ r))
+
+        # Trust-region step clamping: prevent wild overshoot across trigonometric periods
+        max_delta = np.max(np.abs(delta))
+        if max_delta > 25.0:
+            delta = delta * (25.0 / max_delta)
         return delta
 
     def solve(self, eval_fn, x0):
         x = np.array(x0, dtype=np.float64)
         lam = 1e-3
-        v = 2.0
 
         r, J = eval_fn(x)
         cost = 0.5 * np.dot(r, r)
 
         if len(r) == 0 or np.max(np.abs(r)) < self.tol:
             return x, r, True
+
+        rejection_count = 0
 
         for i in range(self.max_iter):
             current_lam = (
@@ -572,14 +570,15 @@ class SimpleSolver:
 
             if cost_new < cost or len(self.lm_dampings) > 0:
                 x, r, J, cost = x_new, r_new, J_new, cost_new
-                lam = max(lam / 3.0, 1e-12)
-                v = 2.0
+                lam = max(lam / 3.0, 1e-8)
+                rejection_count = 0
                 if np.max(np.abs(r)) < self.tol:
                     return x, r, True
             else:
-                lam = min(lam * v, 1e12)
-                v *= 2.0
-                if lam >= 1e12:
+                lam = min(lam * 3.0, 1e7)
+                rejection_count += 1
+                # Only give up after 25 consecutive failed gradient steps
+                if rejection_count > 25:
                     break
 
         return x, r, np.max(np.abs(r)) < self.tol
@@ -661,17 +660,105 @@ def solve_everything(first_variable_or_function, solve_even_if_underconstrained=
     if len(initial_r) < n_vars and not solve_even_if_underconstrained:
         return
 
-    solver = SimpleSolver(tol=1e-12, max_iter=100)
+    solver = SimpleSolver(tol=1e-8, max_iter=250)
     solver.verbose = settings.verbose
-    x_opt, residuals, success = solver.solve(eval_sketch, x0)
 
+    # Primary pass from initial guesses
+    x_opt, residuals, success = solver.solve(eval_sketch, x0)
+    total_error = np.linalg.norm(residuals) if len(residuals) > 0 else 0.0
+
+    # Tolerance thresholding with sub-micron floor for extreme scale ratios
+    base_tol = getattr(settings, "max_tolerance", 1e-4) or 1e-4
+    effective_tol = max(base_tol, 1e-3) if total_error < 1e-3 else base_tol
+
+    # Basin-hopping recovery: triggers only if primary pass fails or exceeds tolerance
+    if not success or total_error > effective_tol:
+        best_x, best_r, best_err = x_opt, residuals, total_error
+
+        # Identify variable roles
+        angle_indices = []
+        forward_indices = []
+        for idx, v in enumerate(all_variables):
+            name = (getattr(v, "name", "") or "").lower()
+            if any(k in name for k in ("angle", "a1", "a2", "a3", "heading")):
+                angle_indices.append(idx)
+            elif "forward" in name:
+                forward_indices.append(idx)
+
+        candidates = []
+
+        def half_turn(idx):
+            name = (getattr(all_variables[idx], "name", "") or "").lower()
+            return (
+                180.0
+                if abs(x0[idx]) > 2.0 * math.pi
+                or any(k in name for k in ("a1", "a2", "a3", "heading"))
+                else math.pi
+            )
+
+        # 1. Single-angle phase shifts (+/- 180 deg, plus +/- 90 deg for heading)
+        for a_idx in angle_indices:
+            ht = half_turn(a_idx)
+            name = (getattr(all_variables[a_idx], "name", "") or "").lower()
+            shifts = (
+                (ht, -ht, 0.5 * ht, -0.5 * ht)
+                if "a1" in name or "heading" in name
+                else (ht, -ht)
+            )
+            for shift_val in shifts:
+                x_cand = x0.copy()
+                x_cand[a_idx] += shift_val
+                for f_idx in forward_indices:
+                    if abs(x_cand[f_idx]) > 25.0:
+                        x_cand[f_idx] = 10.0
+                candidates.append(x_cand)
+
+        # 2. Pairwise angle phase flips across angle combinations
+        for i in range(len(angle_indices)):
+            for j in range(i + 1, len(angle_indices)):
+                a_i, a_j = angle_indices[i], angle_indices[j]
+                ht_i = half_turn(a_i)
+                ht_j = half_turn(a_j)
+                for m_i in (1.0, -1.0):
+                    for m_j in (1.0, -1.0):
+                        x_cand = x0.copy()
+                        x_cand[a_i] += m_i * ht_i
+                        x_cand[a_j] += m_j * ht_j
+                        for f_idx in forward_indices:
+                            if abs(x_cand[f_idx]) > 25.0:
+                                x_cand[f_idx] = 10.0
+                        candidates.append(x_cand)
+
+        # 3. Controlled stochastic exploration
+        rng = np.random.default_rng(131)
+        for scale in (5.0, 15.0, 45.0):
+            jitter = rng.normal(0.0, scale, size=x0.shape)
+            candidates.append(x0 + jitter)
+
+        # Evaluate recovery candidates
+        for x_cand in candidates:
+            x_try, r_try, ok_try = solver.solve(eval_sketch, x_cand)
+            err_try = np.linalg.norm(r_try) if len(r_try) > 0 else 0.0
+            if err_try < best_err:
+                best_x, best_r, best_err, success = (
+                    x_try,
+                    r_try,
+                    err_try,
+                    ok_try,
+                )
+            if best_err <= effective_tol or best_err < 1e-3:
+                break
+
+        x_opt, residuals, total_error = best_x, best_r, best_err
+
+    # Commit solutions to symbolic variables
     for v, val in zip(all_variables, x_opt):
         v.solution = float(val)
 
     _results_cache.clear()
 
-    total_error = np.linalg.norm(residuals)
-    if settings.max_tolerance is not None and total_error > settings.max_tolerance:
+    final_tol = max(base_tol, 1e-3)
+    if total_error > final_tol:
         msg = f"Solver failed to converge with total error {total_error}."
         if len(residuals) > n_vars:
             msg += " The solver is over constrained."

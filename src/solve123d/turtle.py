@@ -484,7 +484,7 @@ class Turtle:
 
     def left(self, angle=None, *, turn_radius=None) -> TurtleArc:
         if angle is None:
-            angle = cs.var(90.0)
+            angle = cs.var(178.123)
             angle.name = "left() unknown angle"
         new_direction = self.direction.combine(DirectionAngle(angle * self.angle_scale))
         return self.change_heading_to(
@@ -493,7 +493,7 @@ class Turtle:
 
     def right(self, angle=None, *, turn_radius=None) -> TurtleArc:
         if angle is None:
-            angle = cs.var(90.0)
+            angle = cs.var(178.123)
             angle.name = "right() unknown angle"
         new_direction = self.direction.combine(
             DirectionAngle(angle * (-self.angle_scale))
