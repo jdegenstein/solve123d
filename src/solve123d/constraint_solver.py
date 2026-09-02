@@ -524,61 +524,70 @@ magic = MagicalZero()
 
 
 class SimpleSolver:
-    """Direct SVD Levenberg-Marquardt Solver with Step Clamping."""
-
+    """Direct SVD Levenberg-Marquardt Solver with Marquardt Column Scaling and Backtracking Line Search."""
     lm_dampings = []
     verbose = False
 
-    def __init__(self, tol=1e-8, max_iter=200):
+    def __init__(self, tol=1e-11, max_iter=400):
         self.tol = tol
         self.max_iter = max_iter
 
-    def step(self, J, r, lam):
-        U, s, Vt = np.linalg.svd(J, full_matrices=False)
-        factors = s / (s**2 + lam)
-        delta = -Vt.T @ (factors * (U.T @ r))
+    def step(self, J, r, lam, angle_mask=None):
+        col_norms = np.linalg.norm(J, axis=0)
+        col_norms = np.where(col_norms < 1e-12, 1.0, col_norms)
+        J_scaled = J / col_norms
+        U, s, Vt = np.linalg.svd(J_scaled, full_matrices=False)
+        factors = np.where(s > 1e-12, s / (s**2 + lam), 0.0)
+        delta_scaled = -Vt.T @ (factors * (U.T @ r))
+        delta = delta_scaled / col_norms
 
-        # Trust-region step clamping: prevent wild overshoot across trigonometric periods
-        max_delta = np.max(np.abs(delta))
-        if max_delta > 25.0:
-            delta = delta * (25.0 / max_delta)
+        # Component-aware step clamping
+        if angle_mask is not None and len(angle_mask) == len(delta):
+            for i in range(len(delta)):
+                limit = 90.0 if angle_mask[i] else 50.0
+                if abs(delta[i]) > limit:
+                    delta[i] = math.copysign(limit, delta[i])
+        else:
+            max_delta = np.max(np.abs(delta))
+            if max_delta > 50.0:
+                delta = delta * (50.0 / max_delta)
         return delta
 
-    def solve(self, eval_fn, x0):
+    def solve(self, eval_fn, x0, angle_mask=None):
         x = np.array(x0, dtype=np.float64)
-        lam = 1e-3
-
+        lam = 1e-4
         r, J = eval_fn(x)
         cost = 0.5 * np.dot(r, r)
-
         if len(r) == 0 or np.max(np.abs(r)) < self.tol:
             return x, r, True
 
         rejection_count = 0
-
         for i in range(self.max_iter):
             current_lam = (
                 self.lm_dampings[min(i, len(self.lm_dampings) - 1)]
                 if len(self.lm_dampings) > 0
                 else lam
             )
-            delta = self.step(J, r, current_lam)
-            x_new = x + delta
+            delta = self.step(J, r, current_lam, angle_mask=angle_mask)
 
-            r_new, J_new = eval_fn(x_new)
-            cost_new = 0.5 * np.dot(r_new, r_new)
+            step_accepted = False
+            for alpha in [1.0, 0.75, 0.5, 0.25, 0.1, 0.02, 0.005]:
+                x_try = x + alpha * delta
+                r_try, J_try = eval_fn(x_try)
+                cost_try = 0.5 * np.dot(r_try, r_try)
+                if cost_try < cost or len(self.lm_dampings) > 0:
+                    x, r, J, cost = x_try, r_try, J_try, cost_try
+                    lam = max(lam / 5.0, 1e-15)
+                    rejection_count = 0
+                    step_accepted = True
+                    if np.max(np.abs(r)) < self.tol:
+                        return x, r, True
+                    break
 
-            if cost_new < cost or len(self.lm_dampings) > 0:
-                x, r, J, cost = x_new, r_new, J_new, cost_new
-                lam = max(lam / 3.0, 1e-8)
-                rejection_count = 0
-                if np.max(np.abs(r)) < self.tol:
-                    return x, r, True
-            else:
-                lam = min(lam * 3.0, 1e7)
+            if not step_accepted:
+                lam = min(lam * 5.0, 1e9)
                 rejection_count += 1
-                # Only give up after 25 consecutive failed gradient steps
-                if rejection_count > 25:
+                if rejection_count > 35:
                     break
 
         return x, r, np.max(np.abs(r)) < self.tol
@@ -635,7 +644,15 @@ def solve_everything(first_variable_or_function, solve_even_if_underconstrained=
         jacobian_rows = []
 
         for c in all_constraints:
-            args_dual = [dual_vars[var_to_idx[a]] for a in c.arguments]
+            args_dual = [
+                dual_vars[var_to_idx[a]]
+                if a in var_to_idx
+                else Dual(
+                    float(a.solution if a.solution is not None else a.initial_value),
+                    np.zeros(n_vars, dtype=np.float64),
+                )
+                for a in c.arguments
+            ]
             res = c.function(*args_dual)
             res_items = res if is_iterable(res) else [res]
 
@@ -675,95 +692,99 @@ def solve_everything(first_variable_or_function, solve_even_if_underconstrained=
     if not success or total_error > effective_tol:
         best_x, best_r, best_err = x_opt, residuals, total_error
 
-        # Identify variable roles
-        angle_indices = []
-        forward_indices = []
-        for idx, v in enumerate(all_variables):
-            name = (getattr(v, "name", "") or "").lower()
-            if any(k in name for k in ("angle", "a1", "a2", "a3", "heading")):
-                angle_indices.append(idx)
-            elif "forward" in name:
-                forward_indices.append(idx)
+    # Identify variable roles and angle mask
+    angle_indices = []
+    forward_indices = []
+    angle_mask = np.zeros(n_vars, dtype=bool)
+
+    for idx, v in enumerate(all_variables):
+        name = (getattr(v, "name", "") or "").lower()
+        if any(k in name for k in ("angle", "a1", "a2", "a3", "heading", "left", "right")):
+            angle_indices.append(idx)
+            angle_mask[idx] = True
+        elif "forward" in name or "dist" in name:
+            forward_indices.append(idx)
+
+    solver = SimpleSolver(tol=1e-11, max_iter=300)
+    solver.verbose = settings.verbose
+
+    # Primary pass from initial guesses
+    x_opt, residuals, success = solver.solve(eval_sketch, x0, angle_mask=angle_mask)
+    total_error = np.linalg.norm(residuals) if len(residuals) > 0 else 0.0
+
+    base_tol = getattr(settings, "max_tolerance", 1e-7) or 1e-7
+
+    # Basin-hopping recovery if primary pass did not reach tight tolerance
+    if not success or total_error > base_tol:
+        best_x, best_r, best_err = x_opt, residuals, total_error
 
         candidates = []
 
-        def half_turn(idx):
+        def get_degree_shifts(idx):
             name = (getattr(all_variables[idx], "name", "") or "").lower()
-            return (
-                180.0
-                if abs(x0[idx]) > 2.0 * math.pi
-                or any(k in name for k in ("a1", "a2", "a3", "heading"))
-                else math.pi
-            )
+            is_deg = any(k in name for k in ("bad_a", "a1", "a2", "a3", "heading", "left", "right"))
+            unit = 180.0 if (is_deg or abs(x0[idx]) > 6.5) else math.pi
+            return [unit, -unit, 0.5 * unit, -0.5 * unit, 2 * unit]
 
-        # 1. Single-angle phase shifts (+/- 180 deg, plus +/- 90 deg for heading)
+        # 1. Single and dual angle flips
         for a_idx in angle_indices:
-            ht = half_turn(a_idx)
-            name = (getattr(all_variables[a_idx], "name", "") or "").lower()
-            shifts = (
-                (ht, -ht, 0.5 * ht, -0.5 * ht)
-                if "a1" in name or "heading" in name
-                else (ht, -ht)
-            )
-            for shift_val in shifts:
+            for shift_val in get_degree_shifts(a_idx):
                 x_cand = x0.copy()
                 x_cand[a_idx] += shift_val
-                for f_idx in forward_indices:
-                    if abs(x_cand[f_idx]) > 25.0:
-                        x_cand[f_idx] = 10.0
                 candidates.append(x_cand)
 
-        # 2. Pairwise angle phase flips across angle combinations
         for i in range(len(angle_indices)):
             for j in range(i + 1, len(angle_indices)):
                 a_i, a_j = angle_indices[i], angle_indices[j]
-                ht_i = half_turn(a_i)
-                ht_j = half_turn(a_j)
-                for m_i in (1.0, -1.0):
-                    for m_j in (1.0, -1.0):
+                shifts_i = get_degree_shifts(a_i)[:2]
+                shifts_j = get_degree_shifts(a_j)[:2]
+                for si in shifts_i:
+                    for sj in shifts_j:
                         x_cand = x0.copy()
-                        x_cand[a_i] += m_i * ht_i
-                        x_cand[a_j] += m_j * ht_j
-                        for f_idx in forward_indices:
-                            if abs(x_cand[f_idx]) > 25.0:
-                                x_cand[f_idx] = 10.0
+                        x_cand[a_i] += si
+                        x_cand[a_j] += sj
                         candidates.append(x_cand)
 
-        # 3. Controlled stochastic exploration
-        rng = np.random.default_rng(131)
-        for scale in (5.0, 15.0, 45.0):
-            jitter = rng.normal(0.0, scale, size=x0.shape)
-            candidates.append(x0 + jitter)
+        # 2. Forward variations paired with angle flips
+        for f_idx in forward_indices:
+            for f_val in [1.0, 5.0, 20.0, 50.0]:
+                x_cand = x0.copy()
+                x_cand[f_idx] = f_val
+                candidates.append(x_cand)
 
-        # Evaluate recovery candidates
+        # 3. Deterministic random restarts
+        rng = np.random.default_rng(7056)
+        for scale in (10.0, 30.0, 90.0):
+            for _ in range(5):
+                jitter = rng.normal(0.0, scale, size=x0.shape)
+                candidates.append(x0 + jitter)
+
         for x_cand in candidates:
-            x_try, r_try, ok_try = solver.solve(eval_sketch, x_cand)
+            x_try, r_try, ok_try = solver.solve(eval_sketch, x_cand, angle_mask=angle_mask)
             err_try = np.linalg.norm(r_try) if len(r_try) > 0 else 0.0
             if err_try < best_err:
-                best_x, best_r, best_err, success = (
-                    x_try,
-                    r_try,
-                    err_try,
-                    ok_try,
-                )
-            if best_err <= effective_tol or best_err < 1e-3:
+                best_x, best_r, best_err, success = x_try, r_try, err_try, ok_try
+            if best_err <= base_tol:
                 break
 
         x_opt, residuals, total_error = best_x, best_r, best_err
 
-    # Commit solutions to symbolic variables
+    # Final polish pass if close to solution
+    if total_error < 1e-3 and total_error > 1e-10:
+        solver_tight = SimpleSolver(tol=1e-11, max_iter=100)
+        x_opt, residuals, _ = solver_tight.solve(eval_sketch, x_opt, angle_mask=angle_mask)
+        total_error = np.linalg.norm(residuals) if len(residuals) > 0 else 0.0
+
     for v, val in zip(all_variables, x_opt):
         v.solution = float(val)
 
     _results_cache.clear()
 
-    final_tol = max(base_tol, 1e-3)
-    if total_error > final_tol:
+    if total_error > base_tol:
         msg = f"Solver failed to converge with total error {total_error}."
         if len(residuals) > n_vars:
             msg += " The solver is over constrained."
         raise SolverError(msg)
-
 
 # ==============================================================================
 # Constraint Decorators & Built-in Primitives

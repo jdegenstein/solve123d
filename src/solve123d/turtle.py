@@ -570,15 +570,12 @@ class Turtle:
         return result
 
     def closing_constraint(self, tangency=False):
-        applied_constraint = False
         x_diff = self.position[0] - self.first_position[0]
         if not all_values(x_diff):
             x_diff.make_zero()
-            applied_constraint = True
         y_diff = self.position[1] - self.first_position[1]
         if not all_values(y_diff):
             y_diff.make_zero()
-            applied_constraint = True
         if tangency:
             make_parallel(self.direction, self.first_direction)
 
