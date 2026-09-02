@@ -28,46 +28,90 @@ import collections
 import copy
 from enum import Enum
 import math
+from typing import TypeAlias
 from warnings import warn
 import numpy as np
 import build123d
 import solve123d as cs
-from typing import TypeAlias
 
 FloatLike: TypeAlias = (
     cs.Variable | cs.WrappedFunction | float | int | cs.Dual | np.ndarray
 )
 
-
 SCALE_FOR_ANGLE_PARALELISM_CONSTRAINTS = 0.1
 
 
-class Primitive:
+# ==============================================================================
+# Geometric Primitives & Intermediate Containers
+# ==============================================================================
+
+
+class TurtlePrimitive:
+    """Base class for internal intermediate 2D sketch segments."""
+
     pass
 
 
-class Line(Primitive):
+class TurtleLine(TurtlePrimitive):
+    """A straight 2D line segment between two symbolic or concrete points."""
+
     def __init__(self, p1, p2):
         self.points = (p1, p2)
 
     def debug_print(self):
-        print(
-            f"line {cs.solve(cs.solve(self.points[0]))}->{cs.solve(cs.solve(self.points[1]))}"
-        )
+        print(f"line {cs.solve(self.points[0])}->{cs.solve(self.points[1])}")
 
 
-class TArc(Primitive):
+class Center(tuple):
+    """A 2D coordinate tuple for arc centers supporting direct property assignments."""
+
+    @property
+    def x(self):
+        return self[0]
+
+    @x.setter
+    def x(self, value):
+        cs.magic.zero = self[0] - value
+
+    @property
+    def y(self):
+        return self[1]
+
+    @y.setter
+    def y(self, value):
+        cs.magic.zero = self[1] - value
+
+
+class TurtleArc(TurtlePrimitive):
+    """A 2D circular arc defined by tangencies, endpoints, and center coordinates."""
+
     def __init__(self, start_point, tangent_at_start, end_point, center, radius):
         self.start_point = start_point
         self.tangent_at_start = tangent_at_start
         self.end_point = end_point
-        self.center = center
+        self._center = Center(center) if not isinstance(center, Center) else center
         self.radius = radius
 
+    @property
+    def center(self) -> Center:
+        return self._center
+
+    @center.setter
+    def center(self, value):
+        if not cs.is_iterable(value) or len(value) != 2:
+            raise ValueError(
+                f"arc.center must be a 2D coordinate sequence (x, y), got {value}"
+            )
+        target_x, target_y = value
+        if target_x is not None:
+            cs.magic.zero = self._center[0] - target_x
+        if target_y is not None:
+            cs.magic.zero = self._center[1] - target_y
+
     def debug_print(self):
-        start_point = (cs.solve(cs.solve(self.start_point)),)
-        end_point = (cs.solve(cs.solve(self.end_point)),)
-        tangent = cs.solve(cs.solve(self.tangent_at_start))
+        start_point = (cs.solve(self.start_point),)
+        end_point = (cs.solve(self.end_point),)
+        tangent = cs.solve(self.tangent_at_start)
         print(f"arc {start_point}_{tangent}->{end_point}")
 
 
@@ -77,32 +121,37 @@ class TurnDir(Enum):
     RIGHT = 2
 
 
-def rotate(a, b):
+# ==============================================================================
+# Private Vector Math Utilities (Prefixed to avoid build123d conflicts)
+# ==============================================================================
+
+
+def _vec_rotate(a, b):
     return (a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0])
 
 
-def conjugate(a):
+def _vec_conjugate(a):
     return (a[0], -a[1])
 
 
-def add(a, b):
+def _vec_add(a, b):
     return (a[0] + b[0], a[1] + b[1])
 
 
-def sub(a, b):
+def _vec_sub(a, b):
     return (a[0] - b[0], a[1] - b[1])
 
 
-def norm(a):
+def _vec_norm(a):
     return cs.make_wrapper(cs.d_hypot)(a[0], a[1]) + 1e-25
 
 
-def vec_scale(a, s):
+def _vec_scale(a, s):
     return (a[0] * s, a[1] * s)
 
 
-def normalized(a):
-    return vec_scale(a, 1.0 / norm(a))
+def _vec_normalized(a):
+    return _vec_scale(a, 1.0 / _vec_norm(a))
 
 
 def all_values(*args):
@@ -123,7 +172,6 @@ def decouple_value(v):
     return result
 
 
-# Use constraint_solver Dual implementations
 wrapped_abs = cs.make_wrapper(cs.d_abs)
 wrapped_atan2 = cs.make_wrapper(cs.d_atan2)
 wrapped_sin = cs.make_wrapper(cs.d_sin)
@@ -146,9 +194,14 @@ wrapped_normalize_angle = cs.make_wrapper(normalize_angle)
 
 
 def make_non_zero(a, eps=1e-20):
-    val = a.val if isinstance(a, cs.Dual) else float(a)
-    sign = 1.0 if val >= 0 else -1.0
-    return a + eps * sign
+    if isinstance(a, cs.Dual):
+        sign = 1.0 if a.val >= 0 else -1.0
+        return a + eps * sign
+    try:
+        sign = 1.0 if float(a) >= 0 else -1.0
+        return a + eps * sign
+    except (TypeError, ValueError):
+        return a + eps
 
 
 wrapped_make_non_zero = cs.make_wrapper(make_non_zero)
@@ -159,11 +212,16 @@ def wrapped_safe_atan2(y, x):
 
 
 def angle_error(dir1, dir2, angle=float(0.0)):
-    ddir = rotate(dir2, conjugate(dir1))
-    alpha = wrapped_atan2(cs.make_wrapper(make_non_zero)(ddir[1]), ddir[0])
+    ddir = _vec_rotate(dir2, _vec_conjugate(dir1))
+    alpha = wrapped_atan2(wrapped_make_non_zero(ddir[1]), ddir[0])
     if isinstance(angle, (float, int)) and angle == 0.0:
         return alpha
     return wrapped_normalize_angle(alpha - angle)
+
+
+# ==============================================================================
+# Direction Handling
+# ==============================================================================
 
 
 class Direction:
@@ -232,13 +290,13 @@ class DirectionNormalized(Direction):
         return self.direction
 
     def negate(self):
-        return DirectionNormalized(conjugate(self.direction))
+        return DirectionNormalized(_vec_conjugate(self.direction))
 
     def _combine(self, other):
         if isinstance(other, DirectionNormalized):
-            return DirectionNormalized(rotate(self.direction, other.direction))
+            return DirectionNormalized(_vec_rotate(self.direction, other.direction))
         if isinstance(other, (DirectionUnnormalized, DirectionDiff)):
-            return DirectionUnnormalized(rotate(self.direction, other.dir_u()))
+            return DirectionUnnormalized(_vec_rotate(self.direction, other.dir_u()))
 
 
 class DirectionUnnormalized(Direction):
@@ -255,14 +313,14 @@ class DirectionUnnormalized(Direction):
         return self.direction
 
     def dir_n(self):
-        return normalized(self.direction)
+        return _vec_normalized(self.direction)
 
     def negate(self):
-        return DirectionUnnormalized(conjugate(self.direction))
+        return DirectionUnnormalized(_vec_conjugate(self.direction))
 
     def _combine(self, other):
         if isinstance(other, (DirectionUnnormalized, DirectionDiff)):
-            return DirectionUnnormalized(rotate(self.direction, other.dir_u()))
+            return DirectionUnnormalized(_vec_rotate(self.direction, other.dir_u()))
 
 
 class DirectionDiff(Direction):
@@ -275,10 +333,10 @@ class DirectionDiff(Direction):
         return all_values(self.points)
 
     def dir_u(self):
-        return sub(self.points[1], self.points[0])
+        return _vec_sub(self.points[1], self.points[0])
 
     def dir_n(self):
-        return normalized(self.dir_u())
+        return _vec_normalized(self.dir_u())
 
     def negate(self):
         return DirectionDiff(
@@ -290,7 +348,7 @@ class DirectionDiff(Direction):
 
     def _combine(self, other):
         if isinstance(other, DirectionDiff):
-            return DirectionUnnormalized(rotate(self.dir_u(), other.dir_u()))
+            return DirectionUnnormalized(_vec_rotate(self.dir_u(), other.dir_u()))
 
 
 AnyDirection: TypeAlias = (
@@ -332,6 +390,11 @@ def make_parallel(a: AnyDirection, b: AnyDirection, name=None):
         d = a.combine(b.negate())
         x, y = d.dir_u()
         wrapped_safe_atan2(y, x).make_zero(name or "parallel vector vector")
+
+
+# ==============================================================================
+# Turtle Context & Command Engine
+# ==============================================================================
 
 
 class Turtle:
@@ -382,11 +445,11 @@ class Turtle:
             dist = cs.absvar(1.239459234564)
             dist_was_whatever = True
         if self.direction.known():
-            new_pos = add(self.position, vec_scale(self.direction.dir_n(), dist))
+            new_pos = _vec_add(self.position, _vec_scale(self.direction.dir_n(), dist))
         else:
             if self.direction.__class__ == Direction:
                 new_pos = cs.var(
-                    add(
+                    _vec_add(
                         cs.get_initial_value(self.position),
                         (cs.get_initial_value(dist), 0.1234234651234),
                     )
@@ -394,7 +457,9 @@ class Turtle:
             else:
                 new_pos = cs.var(
                     cs.get_initial_value(
-                        add(self.position, vec_scale(self.direction.dir_n(), dist))
+                        _vec_add(
+                            self.position, _vec_scale(self.direction.dir_n(), dist)
+                        )
                     )
                 )
             new_dir = DirectionDiff((self.position, new_pos))
@@ -403,13 +468,13 @@ class Turtle:
             make_parallel(self.direction, new_dir)
             self.direction = new_dir
             if not dist_was_whatever:
-                (norm(sub(new_pos, self.position)) - dist).make_zero(
+                (_vec_norm(_vec_sub(new_pos, self.position)) - dist).make_zero(
                     "forward distance constraint"
                 )
 
         if self.is_down and ((draw_line is None) or draw_line):
             self.point_list.append(self.position)
-            self.primitive_list.append(Line(self.position, new_pos))
+            self.primitive_list.append(TurtleLine(self.position, new_pos))
             if self.first_direction is None:
                 self.first_direction = self.direction
                 self.first_position = self.position
@@ -417,18 +482,18 @@ class Turtle:
         self.position = new_pos
         return result
 
-    def left(self, angle=None, *, turn_radius=None) -> TArc:
+    def left(self, angle=None, *, turn_radius=None) -> TurtleArc:
         if angle is None:
-            angle = cs.var(178.1234123452345)
+            angle = cs.var(90.0)
             angle.name = "left() unknown angle"
         new_direction = self.direction.combine(DirectionAngle(angle * self.angle_scale))
         return self.change_heading_to(
             new_direction, turn_radius=turn_radius, turn_dir=TurnDir.LEFT
         )
 
-    def right(self, angle=None, *, turn_radius=None) -> TArc:
+    def right(self, angle=None, *, turn_radius=None) -> TurtleArc:
         if angle is None:
-            angle = cs.var(178.1234123452345)
+            angle = cs.var(90.0)
             angle.name = "right() unknown angle"
         new_direction = self.direction.combine(
             DirectionAngle(angle * (-self.angle_scale))
@@ -439,7 +504,7 @@ class Turtle:
 
     def heading(
         self, angle_or_x, y=None, *, turn_radius=None, turn_dir: TurnDir = TurnDir.AUTO
-    ) -> TArc:
+    ) -> TurtleArc:
         return self.change_heading_to(
             make_direction_from_user_params(angle_or_x, y, self.angle_scale),
             turn_radius=turn_radius,
@@ -452,7 +517,7 @@ class Turtle:
         *,
         turn_radius=None,
         turn_dir: TurnDir = TurnDir.AUTO,
-    ) -> TArc:
+    ) -> TurtleArc:
         r = turn_radius if turn_radius is not None else self.turn_radius
         if (
             isinstance(r, (cs.WrappedFunction, cs.Variable, cs.Dual, np.ndarray))
@@ -494,11 +559,11 @@ class Turtle:
                 self.forward(r, draw_line=False)
                 self.right(api_90_deg, turn_radius=0)
 
-            result = TArc(initial_pos, initial_dir, self.position, center, r)
+            result = TurtleArc(initial_pos, initial_dir, self.position, center, r)
             if self.is_down:
                 self.primitive_list.append(result)
         else:
-            result = TArc(
+            result = TurtleArc(
                 self.position, self.direction.dir_n(), self.position, self.position, r
             )
             self.direction = new_direction
@@ -517,15 +582,21 @@ class Turtle:
         if tangency:
             make_parallel(self.direction, self.first_direction)
 
+    def close(self, tangency=False):
+        """Releases heading constraint, steps home, and closes the profile."""
+        self.direction = Direction()
+        self.forward()
+        self.closing_constraint(tangency=tangency)
+
     def debug_print_solution(self):
         for p in self.primitive_list:
             p.debug_print()
 
     def to_build123d_list(self, ignore_errors=False, debug_objects=False):
         for i, p in enumerate(self.primitive_list):
-            if isinstance(p, Line):
-                p0 = cs.solve(cs.solve(p.points[0]))
-                p1 = cs.solve(cs.solve(p.points[1]))
+            if isinstance(p, TurtleLine):
+                p0 = cs.solve(p.points[0])
+                p1 = cs.solve(p.points[1])
                 try:
                     line = build123d.Line(p0, p1)
                     line.name = f"l{i}"
@@ -533,12 +604,12 @@ class Turtle:
                 except Exception:
                     if not ignore_errors:
                         raise
-            elif isinstance(p, TArc):
+            elif isinstance(p, TurtleArc):
                 try:
                     arc = build123d.TangentArc(
-                        cs.solve(cs.solve(p.start_point)),
-                        cs.solve(cs.solve(p.end_point)),
-                        tangent=cs.solve(cs.solve(p.tangent_at_start)),
+                        cs.solve(p.start_point),
+                        cs.solve(p.end_point),
+                        tangent=cs.solve(p.tangent_at_start),
                     )
                     arc.name = f"a{i}"
                     yield arc
@@ -565,20 +636,20 @@ class Turtle:
     def to_build123d(self, ignore_errors=False):
         with build123d.BuildLine() as l:
             for i, p in enumerate(self.primitive_list):
-                if isinstance(p, Line):
-                    p0 = cs.solve(cs.solve(p.points[0]))
-                    p1 = cs.solve(cs.solve(p.points[1]))
+                if isinstance(p, TurtleLine):
+                    p0 = cs.solve(p.points[0])
+                    p1 = cs.solve(p.points[1])
                     try:
                         build123d.Line(p0, p1).name = f"l{i}"
                     except Exception:
                         if not ignore_errors:
                             raise
-                elif isinstance(p, TArc):
+                elif isinstance(p, TurtleArc):
                     try:
                         build123d.TangentArc(
-                            cs.solve(cs.solve(p.start_point)),
-                            cs.solve(cs.solve(p.end_point)),
-                            tangent=cs.solve(cs.solve(p.tangent_at_start)),
+                            cs.solve(p.start_point),
+                            cs.solve(p.end_point),
+                            tangent=cs.solve(p.tangent_at_start),
                         ).name = f"a{i}"
                     except Exception:
                         if not ignore_errors:
@@ -641,7 +712,16 @@ class Turtle:
 
     @property
     def heading_vector(self):
+        warn(
+            "Property Turtle.heading_vector is deprecated. "
+            "Please update your code to use Turtle.be_heading and/or Turtle.direction"
+        )
         return self.direction.dir_n()
+
+
+# ==============================================================================
+# Functional Module Wrappers
+# ==============================================================================
 
 
 def teleport(x_or_pos, y=None):
@@ -652,17 +732,17 @@ def forward(dist=None):
     return Turtle.top().forward(dist)
 
 
-def left(angle=None, *, turn_radius=None) -> TArc:
+def left(angle=None, *, turn_radius=None) -> TurtleArc:
     return Turtle.top().left(angle, turn_radius=turn_radius)
 
 
-def right(angle=None, *, turn_radius=None) -> TArc:
+def right(angle=None, *, turn_radius=None) -> TurtleArc:
     return Turtle.top().right(angle, turn_radius=turn_radius)
 
 
 def heading(
     angle_or_x_or_dir, y=None, *, turn_radius=None, turn_dir: TurnDir = TurnDir.AUTO
-) -> TArc:
+) -> TurtleArc:
     return Turtle.top().heading(
         angle_or_x_or_dir, y, turn_radius=turn_radius, turn_dir=turn_dir
     )
@@ -680,6 +760,10 @@ def closing_constraint(tangency=False):
     Turtle.top().closing_constraint(tangency)
 
 
+def close(tangency=False):
+    Turtle.top().close(tangency)
+
+
 def pen_down():
     Turtle.top().pen_down()
 
@@ -687,15 +771,19 @@ def pen_down():
 def pen_up():
     Turtle.top().pen_up()
 
-
 __all__ = [
     "Turtle",
+    "TurtlePrimitive",
+    "TurtleLine",
+    "TurtleArc",
+    "Center",
     "teleport",
     "forward",
     "left",
     "right",
     "heading",
     "closing_constraint",
+    "close",
     "pen_down",
     "pen_up",
     "be_at",
