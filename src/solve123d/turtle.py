@@ -32,8 +32,19 @@ from warnings import warn
 import numpy as np
 import build123d
 import solve123d as cs
+from typing import TypeAlias
 
-type FloatLike = cs.Variable | cs.WrappedFunction | float | int | cs.Dual | np.ndarray
+FloatLike: TypeAlias = (
+    cs.Variable | cs.WrappedFunction | float | int | cs.Dual | np.ndarray
+)
+
+AnyDirection: TypeAlias = (
+    Direction
+    | DirectionAngle
+    | DirectionNormalized
+    | DirectionUnnormalized
+    | DirectionDiff
+)
 
 SCALE_FOR_ANGLE_PARALELISM_CONSTRAINTS = 0.1
 
@@ -314,13 +325,13 @@ def make_parallel(a: AnyDirection, b: AnyDirection, name=None):
         if isinstance(b, DirectionAngle):
             wrapped_normalize_angle(a.angle - b.angle).make_zero("parallel angle angle")
         else:
-            (x, y) = b.dir_u()
+            x, y = b.dir_u()
             wrapped_normalize_angle(a.angle - wrapped_safe_atan2(y, x)).make_zero(
                 "parallel angle vector"
             )
     else:
         d = a.combine(b.negate())
-        (x, y) = d.dir_u()
+        x, y = d.dir_u()
         wrapped_safe_atan2(y, x).make_zero(name or "parallel vector vector")
 
 
@@ -444,7 +455,10 @@ class Turtle:
         turn_dir: TurnDir = TurnDir.AUTO,
     ) -> TArc:
         r = turn_radius if turn_radius is not None else self.turn_radius
-        if isinstance(r, (cs.WrappedFunction, cs.Variable, cs.Dual, np.ndarray)) or r != 0:
+        if (
+            isinstance(r, (cs.WrappedFunction, cs.Variable, cs.Dual, np.ndarray))
+            or r != 0
+        ):
             if turn_dir == TurnDir.AUTO:
                 if self.direction.known() and new_direction.known():
                     if new_direction.combine(self.direction.negate()).dir_u()[1] > 0:
