@@ -29,6 +29,7 @@ import unittest
 import solve123d as cs
 from solve123d.turtle import *
 import build123d
+from build123d import *
 
 wrapped_abs = cs.make_wrapper(cs.d_abs)
 cs.set_verbose(True)
@@ -329,6 +330,115 @@ class TurtleTest(unittest.TestCase):
         cs.set_opportunistic(False)
         self.too_tall_toby(False)
 
+    def test_ttt_23_t_42(self):
+        # ----------------------------------------------------------------------
+        # Sketch 1: Main Arm Profile
+        # ----------------------------------------------------------------------
+        with Turtle() as t:
+            heading(0)
+            forward()
+
+            # Corner radius set inline with 90 deg turn
+            left(90, turn_radius=55)
+            forward(11)
+
+            # Directly assign the arc center coordinates
+            arc = left(turn_radius=20)
+            arc.center = (150, 66)
+
+            # Reverse corner arc into return path
+            right(turn_radius=35)
+            t.y = 40
+            forward()
+            t.x = 0
+            t.y = 40
+
+            # Unconstrains heading, steps home to (0, 0), and closes the wire
+            close()
+
+        line = t.to_build123d()
+        print(f"Sketch 1 size: {line.bounding_box().size}")
+
+        # ----------------------------------------------------------------------
+        # Sketch 2: Cross Section Profile
+        # ----------------------------------------------------------------------
+        with Turtle() as t2:
+            heading(-90)
+            forward()
+
+            # Turn to arc extrema
+            left(turn_radius=28)
+            t2.y = -160 / 2 - 28
+            t2.x = 28
+
+            # Turn again with matching radius
+            left(turn_radius=28)
+            forward()
+            t2.x = 100
+            t2.y = -40
+
+            # Sharp corner turn up to y=0
+            left(turn_radius=0)
+            forward()
+            t2.x = 100
+            t2.y = 0
+
+            # Steps home from (100, 0) to (0, 0) and closes the wire
+            close()
+
+        line2 = Plane.XZ * t2.to_build123d()
+        print(f"Sketch 2 size: {line2.bounding_box().size}")
+
+        # ----------------------------------------------------------------------
+        # Solid Modeling Pipeline
+        # ----------------------------------------------------------------------
+        with BuildPart() as p:
+            with BuildSketch() as s:
+                add(line)  # Already closed by close()
+                make_face()
+                split(bisect_by=Plane.YZ.offset(40))
+            extrude(amount=-40)
+
+            with BuildSketch(Plane.XZ) as s2:
+                add(line2)  # Already closed by close()
+                make_face()
+            extrude(amount=-20)
+
+            with BuildSketch(Plane.ZY):
+                with Locations((0, 40)):
+                    Rectangle(80 - 28, 60, align=(Align.CENTER, Align.MIN))
+            extrude(amount=-200, mode=Mode.SUBTRACT)
+
+            with BuildSketch(Plane.XZ):
+                with Locations((28, -80)):
+                    Circle(28)
+            extrude(amount=-30)
+
+            with Locations(Plane.XZ):
+                with Locations((28, -80)):
+                    Hole(27 / 2)
+
+            with BuildSketch(Plane.XZ):
+                with Locations((40, 0)):
+                    Circle(40)
+            extrude(amount=-60)
+
+            with Locations(Plane.XZ):
+                with Locations((40, 0)):
+                    Hole(20)
+
+            with Locations((150, 66)):
+                Hole(22 / 2)
+
+            mirror(about=Plane.XY)
+        
+        densa = 7800 / 1e6  # Carbon steel density (g/mm^3)
+        mass = p.part.volume * densa
+        self.assertAlmostEqual(
+            mass,
+            5815.00,
+            places=2,
+        )
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
