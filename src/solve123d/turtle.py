@@ -38,13 +38,6 @@ FloatLike: TypeAlias = (
     cs.Variable | cs.WrappedFunction | float | int | cs.Dual | np.ndarray
 )
 
-AnyDirection: TypeAlias = (
-    Direction
-    | DirectionAngle
-    | DirectionNormalized
-    | DirectionUnnormalized
-    | DirectionDiff
-)
 
 SCALE_FOR_ANGLE_PARALELISM_CONSTRAINTS = 0.1
 
