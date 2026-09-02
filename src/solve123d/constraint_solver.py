@@ -528,11 +528,11 @@ class SimpleSolver:
     lm_dampings = []
     verbose = False
 
-    def __init__(self, tol=1e-10, max_iter=200):
+    def __init__(self, tol=1e-10, max_iter=150):
         self.tol = tol
         self.max_iter = max_iter
 
-    def step(self, J, r, lam, angle_mask=None):
+    def step(self, J, r, lam, angle_mask=None, linear_limit=50.0):
         col_norms = np.linalg.norm(J, axis=0)
         col_norms = np.where(col_norms < 1e-12, 1.0, col_norms)
         J_scaled = J / col_norms
@@ -544,16 +544,16 @@ class SimpleSolver:
         # Component-aware step clamping
         if angle_mask is not None and len(angle_mask) == len(delta):
             for i in range(len(delta)):
-                limit = 90.0 if angle_mask[i] else 50.0
+                limit = 90.0 if angle_mask[i] else linear_limit
                 if abs(delta[i]) > limit:
                     delta[i] = math.copysign(limit, delta[i])
         else:
             max_delta = np.max(np.abs(delta))
-            if max_delta > 50.0:
-                delta = delta * (50.0 / max_delta)
+            if max_delta > linear_limit:
+                delta = delta * (linear_limit / max_delta)
         return delta
 
-    def solve(self, eval_fn, x0, angle_mask=None):
+    def solve(self, eval_fn, x0, angle_mask=None, linear_limit=50.0):
         x = np.array(x0, dtype=np.float64)
         lam = 1e-4
         r, J = eval_fn(x)
@@ -568,7 +568,9 @@ class SimpleSolver:
                 if len(self.lm_dampings) > 0
                 else lam
             )
-            delta = self.step(J, r, current_lam, angle_mask=angle_mask)
+            delta = self.step(
+                J, r, current_lam, angle_mask=angle_mask, linear_limit=linear_limit
+            )
 
             if np.max(np.abs(delta)) < 1e-14:
                 break
@@ -690,6 +692,23 @@ def solve_everything(first_variable_or_function, solve_even_if_underconstrained=
         elif "forward" in name or "dist" in name:
             forward_indices.append(idx)
 
+    # Guard trust-region scaling: standard CAD parts (<= 500 mm) remain clamped to 50.0
+    linear_indices = np.where(~angle_mask)[0]
+    max_x_lin = (
+        float(np.max(np.abs(x0[linear_indices])))
+        if len(linear_indices) > 0
+        else 0.0
+    )
+    max_r_lin = float(np.max(np.abs(initial_r))) if len(initial_r) > 0 else 0.0
+    characteristic_scale = max(max_x_lin, max_r_lin)
+
+    if characteristic_scale > 500.0:
+        linear_scale = characteristic_scale * 0.1
+        scale_mult = linear_scale / 50.0
+    else:
+        linear_scale = 50.0
+        scale_mult = 1.0
+
     base_tol = getattr(settings, "max_tolerance", 1e-7) or 1e-7
 
     # --------------------------------------------------------------------------
@@ -698,7 +717,9 @@ def solve_everything(first_variable_or_function, solve_even_if_underconstrained=
     solver = SimpleSolver(tol=1e-10, max_iter=150)
     solver.verbose = settings.verbose
 
-    x_opt, residuals, success = solver.solve(eval_sketch, x0, angle_mask=angle_mask)
+    x_opt, residuals, success = solver.solve(
+        eval_sketch, x0, angle_mask=angle_mask, linear_limit=linear_scale
+    )
     total_error = np.linalg.norm(residuals) if len(residuals) > 0 else 0.0
     max_res = np.max(np.abs(residuals)) if len(residuals) > 0 else 0.0
 
@@ -709,7 +730,7 @@ def solve_everything(first_variable_or_function, solve_even_if_underconstrained=
         return
 
     # --------------------------------------------------------------------------
-    # BASIN-HOPPING: Multi-Start with Immediate Polish and Early Break
+    # BASIN-HOPPING: Multi-Start with Early Break
     # --------------------------------------------------------------------------
     best_x, best_r, best_err = x_opt, residuals, total_error
 
@@ -743,7 +764,7 @@ def solve_everything(first_variable_or_function, solve_even_if_underconstrained=
 
     # 3. Forward variations
     for f_idx in forward_indices:
-        for f_val in [1.0, 5.0, 20.0, 50.0]:
+        for f_val in [1.0 * scale_mult, 5.0 * scale_mult, 20.0 * scale_mult, 50.0 * scale_mult]:
             x_cand = x0.copy()
             x_cand[f_idx] = f_val
             candidates.append(x_cand)
@@ -753,22 +774,29 @@ def solve_everything(first_variable_or_function, solve_even_if_underconstrained=
     for scale in (10.0, 30.0, 90.0):
         for _ in range(5):
             jitter = rng.normal(0.0, scale, size=x0.shape)
+            if scale_mult > 1.0:
+                for idx in range(n_vars):
+                    if not angle_mask[idx]:
+                        jitter[idx] *= scale_mult
             candidates.append(x0 + jitter)
 
     solver_cand = SimpleSolver(tol=1e-10, max_iter=150)
     solver_tight = SimpleSolver(tol=1e-11, max_iter=80)
 
     for x_cand in candidates:
-        x_try, r_try, ok_try = solver_cand.solve(eval_sketch, x_cand, angle_mask=angle_mask)
+        x_try, r_try, ok_try = solver_cand.solve(
+            eval_sketch, x_cand, angle_mask=angle_mask, linear_limit=linear_scale
+        )
         err_try = np.linalg.norm(r_try) if len(r_try) > 0 else 0.0
         if err_try < best_err:
             best_x, best_r, best_err, success = x_try, r_try, err_try, ok_try
 
-        # As soon as any candidate finds the convergence basin (< 1e-3),
-        # polish it to < 1e-11 and stop evaluating remaining candidates.
-        if best_err < 1e-3:
+        rel_err = best_err / linear_scale
+        if best_err < 1e-3 or rel_err < 1e-4:
             if best_err > base_tol:
-                x_tight, r_tight, _ = solver_tight.solve(eval_sketch, best_x, angle_mask=angle_mask)
+                x_tight, r_tight, _ = solver_tight.solve(
+                    eval_sketch, best_x, angle_mask=angle_mask, linear_limit=linear_scale
+                )
                 err_tight = np.linalg.norm(r_tight) if len(r_tight) > 0 else 0.0
                 if err_tight < best_err:
                     best_x, best_r, best_err = x_tight, r_tight, err_tight
@@ -778,8 +806,11 @@ def solve_everything(first_variable_or_function, solve_even_if_underconstrained=
     x_opt, residuals, total_error = best_x, best_r, best_err
 
     # Safety polish if within reach
-    if total_error < 1e-2 and total_error > base_tol:
-        x_tight, r_tight, _ = solver_tight.solve(eval_sketch, x_opt, angle_mask=angle_mask)
+    rel_total_error = total_error / linear_scale
+    if (total_error < 1e-2 or rel_total_error < 1e-3) and total_error > base_tol:
+        x_tight, r_tight, _ = solver_tight.solve(
+            eval_sketch, x_opt, angle_mask=angle_mask, linear_limit=linear_scale
+        )
         err_tight = np.linalg.norm(r_tight) if len(r_tight) > 0 else 0.0
         if err_tight < total_error:
             x_opt, residuals, total_error = x_tight, r_tight, err_tight
@@ -789,7 +820,7 @@ def solve_everything(first_variable_or_function, solve_even_if_underconstrained=
 
     _results_cache.clear()
 
-    final_tol = max(base_tol, 1e-4)
+    final_tol = max(base_tol, 1e-4 * scale_mult)
     max_res = np.max(np.abs(residuals)) if len(residuals) > 0 else 0.0
     if total_error > final_tol and max_res > final_tol:
         msg = f"Solver failed to converge with total error {total_error}."
