@@ -771,6 +771,7 @@ def pen_down():
 def pen_up():
     Turtle.top().pen_up()
 
+
 __all__ = [
     "Turtle",
     "TurtlePrimitive",

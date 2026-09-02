@@ -431,7 +431,7 @@ class TurtleTest(unittest.TestCase):
                 Hole(22 / 2)
 
             mirror(about=Plane.XY)
-        
+
         densa = 7800 / 1e6  # Carbon steel density (g/mm^3)
         mass = p.part.volume * densa
         self.assertAlmostEqual(
@@ -439,6 +439,7 @@ class TurtleTest(unittest.TestCase):
             5815.00,
             places=2,
         )
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
